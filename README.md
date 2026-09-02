@@ -6,8 +6,7 @@
 
 RoboNex의 로봇 모델, 공통 제어 계약, 균형·보행 학습, 모터·IMU 검증, 시뮬레이션 및 실기 배포 과정을 하나의 흐름으로 연결합니다.
 
-[![RoboNex 시연 영상](https://img.shields.io/badge/YouTube-RoboNex_시연_영상-FF0000?logo=youtube&logoColor=white)](https://youtu.be/NDU9injRqpc?si=BAoaoTQuF6uIX9EO)
-[![RoboNex Shorts](https://img.shields.io/badge/YouTube-RoboNex_Shorts-FF0000?logo=youtube&logoColor=white)](https://youtube.com/shorts/JeGTuEyaseg?si=10shgIlqB5yv9APP)
+[![RoboNex 시연 영상](https://img.shields.io/badge/YouTube-RoboNex_시연_영상-FF0000?logo=youtube&logoColor=white)](https://youtu.be/tN_TbdNKPEo?si=ME0WL47wWYq7zZJ1)
 
 ![Python](https://img.shields.io/badge/Language-Python-3776AB?logo=python&logoColor=white)
 ![Isaac Sim](https://img.shields.io/badge/NVIDIA-Isaac_Sim-76B900?logo=nvidia&logoColor=white)
