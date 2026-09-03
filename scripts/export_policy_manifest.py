@@ -1,39 +1,13 @@
 import argparse
 import os
-import subprocess
 from pathlib import Path
 
 from robonex_common.joints import POLICY_JOINT_ORDER
 from robonex_common.limits import action_normalization
+from robonex_common.paths import COMMON_REPO_NAMES, DESCRIPTION_REPO_NAMES, git_commit, resolve_repo
 from robonex_common.policy import PolicyContract, sha256_file
 
-
-DESCRIPTION_REPO_NAMES = ("robonex-description", "robonex_description")
-
-
-def find_repo(name, configured=None):
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if root.is_dir():
-            return root
-        raise FileNotFoundError(root)
-    names = (name,) if isinstance(name, str) else tuple(name)
-    for anchor in (Path.cwd().resolve(), Path(__file__).resolve()):
-        for parent in (anchor, *anchor.parents):
-            for candidate_name in names:
-                candidate = parent / candidate_name
-                if candidate.is_dir():
-                    return candidate
-    raise FileNotFoundError(names[0])
-
-
-def git_commit(path):
-    return subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+TASK = "RoboNex-Walking-v0"
 
 
 def main():
@@ -49,17 +23,24 @@ def main():
     if not policy.is_file():
         raise FileNotFoundError(policy)
     output = args.output.expanduser().resolve() if args.output else policy.with_name("policy_manifest.json")
-    description_root = find_repo(
+    description_root = resolve_repo(
         DESCRIPTION_REPO_NAMES,
-        args.description_root or os.environ.get("ROBONEX_DESCRIPTION_ROOT"),
+        env_var="ROBONEX_DESCRIPTION_ROOT",
+        explicit=args.description_root,
+        anchors=(__file__,),
     )
-    common_root = find_repo("robonex-common", args.common_root or os.environ.get("ROBONEX_COMMON_ROOT"))
+    common_root = resolve_repo(
+        COMMON_REPO_NAMES,
+        env_var="ROBONEX_COMMON_ROOT",
+        explicit=args.common_root,
+        anchors=(__file__,),
+    )
     training_root = Path(__file__).resolve().parents[1]
     offsets, scales, clips = action_normalization(0.01)
 
     contract = PolicyContract(
         schema_version=1,
-        task="RoboNex-Walking-v0",
+        task=TASK,
         policy_file=os.path.relpath(policy, output.parent),
         policy_sha256=sha256_file(policy),
         description_model=args.description_model,
