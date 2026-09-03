@@ -24,6 +24,7 @@ AGENTS.md
 # Python
 .DS_Store
 .venv/
+.venv*/
 venv/
 **/*.egg-info/
 **/__pycache__/
