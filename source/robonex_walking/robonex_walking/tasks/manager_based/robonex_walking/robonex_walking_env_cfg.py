@@ -24,11 +24,12 @@ from .robot_contract import (
     ACTION_OFFSETS,
     ACTION_SCALES,
     ACTUATOR_PARAMETERS,
+    BASE_HEIGHT,
+    CLOSED_LOOP_DEFAULT_JOINT_POS,
     LEG_JOINTS,
     ROBOT_USD,
 )
 
-BASE_HEIGHT = 1.0789
 STANCE_WIDTH = 0.321
 TARGET_SPEED_X = 0.3
 STEP_AIR_TIME = 0.35
@@ -71,28 +72,11 @@ class RoboNexWalkingSceneCfg(InteractiveSceneCfg):
                 solver_velocity_iteration_count=4,
             ),
         ),
+        soft_joint_pos_limit_factor=0.9,
         # Initial State (m, rad)
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, BASE_HEIGHT),
-            joint_pos={
-                "l_hip_yaw_joint": 0.0,
-                "l_hip_pitch_joint": 0.0,
-                "l_hip_roll_joint": 0.0,
-
-                "l_knee_pitch_joint": 0.0,
-
-                "l_ankle_upper_joint": 0.0,
-                "l_ankle_lower_joint": 0.0,
-
-                "r_hip_yaw_joint": 0.0,
-                "r_hip_pitch_joint": 0.0,
-                "r_hip_roll_joint": 0.0,
-
-                "r_knee_pitch_joint": 0.0,
-
-                "r_ankle_upper_joint": 0.0,
-                "r_ankle_lower_joint": 0.0,
-            },
+            joint_pos=CLOSED_LOOP_DEFAULT_JOINT_POS,
         ),
         # Actuators
         actuators={

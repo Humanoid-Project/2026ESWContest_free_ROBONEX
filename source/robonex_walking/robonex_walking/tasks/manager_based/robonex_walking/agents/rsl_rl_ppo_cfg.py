@@ -5,6 +5,7 @@
 
 from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+from robonex_common.limits import RUNNER_ACTION_CLIP
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
@@ -12,7 +13,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     max_iterations = 6000
     save_interval = 100
     experiment_name = "robonex_walking"
-    clip_actions = 3.0
+    clip_actions = RUNNER_ACTION_CLIP
 
     policy = RslRlPpoActorCriticCfg(
         init_noise_std = 0.5,
