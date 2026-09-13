@@ -76,6 +76,7 @@ if version.parse(installed_version) < version.parse(RSL_RL_VERSION):
 """Rest everything follows."""
 
 import logging
+import math
 import os
 import time
 from datetime import datetime
@@ -109,6 +110,145 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+
+class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
+    def __init__(self, env, clip_actions=None):
+        super().__init__(env, clip_actions=clip_actions)
+        term = self.unwrapped.action_manager.get_term("joint_pos")
+        self.diagnostic_joint_names = tuple(term._joint_names)
+        self.diagnostic_scales = torch.as_tensor(
+            term._scale, device=self.device, dtype=torch.float32
+        ).expand(self.num_envs, self.num_actions)[0].abs().clone()
+        if len(self.diagnostic_joint_names) != self.num_actions:
+            raise ValueError("Policy diagnostics require one joint-position action per joint")
+        self.diagnostic_counts = torch.zeros(self.num_actions + 2, device=self.device)
+        # The target fence is asymmetric per joint, so runner-clip counts alone
+        # cannot see a joint whose target saturates far below the runner clip.
+        self.diagnostic_offsets = torch.as_tensor(
+            term._offset, device=self.device, dtype=torch.float32
+        ).expand(self.num_envs, self.num_actions)[0].clone()
+        target_clip = getattr(term, "_clip", None)
+        self.diagnostic_target_clip = (
+            target_clip[0].detach().clone().to(self.device) if target_clip is not None else None
+        )
+        self.diagnostic_target_counts = torch.zeros(self.num_actions + 1, device=self.device)
+        # split the fence side: an eversion tail loads the low fence of one crank and the
+        # high fence of its mirror, which an unsigned fraction cannot distinguish
+        self.diagnostic_target_lo = torch.zeros(self.num_actions, device=self.device)
+        self.diagnostic_target_hi = torch.zeros(self.num_actions, device=self.device)
+        self.diagnostic_samples = 0
+        scene = getattr(self.unwrapped, "scene", None)
+        sensors = getattr(scene, "sensors", {}) if scene is not None else {}
+        self.walk_metrics = None
+        if "contact_forces" in sensors:
+            from robonex_walking.tasks.manager_based.robonex_walking.mdp.walk_metrics import (
+                WalkMetrics,
+            )
+            from robonex_walking.tasks.manager_based.robonex_walking.robot_contract import (
+                FOOT_ORIGIN_REST_HEIGHT,
+            )
+
+            self.walk_metrics = WalkMetrics(
+                self.unwrapped, FOOT_ORIGIN_REST_HEIGHT, self.unwrapped.step_dt
+            )
+
+    def step(self, actions):
+        with torch.no_grad():
+            self.unwrapped.raw_policy_action = actions.detach().clone()
+            if self.walk_metrics is not None:
+                self.walk_metrics.record_action(actions.detach())
+            reached = torch.zeros_like(actions, dtype=torch.bool)
+            if self.clip_actions is not None:
+                reached = actions.abs() >= self.clip_actions
+            self.diagnostic_counts[:-2] += reached.sum(dim=0)
+            self.diagnostic_counts[-2] += reached.any(dim=1).sum()
+            self.diagnostic_counts[-1] += (~torch.isfinite(actions)).sum()
+            if self.diagnostic_target_clip is not None:
+                target = (
+                    torch.nan_to_num(actions, nan=0.0, posinf=0.0, neginf=0.0)
+                    * self.diagnostic_scales
+                    + self.diagnostic_offsets
+                )
+                below = target <= self.diagnostic_target_clip[:, 0]
+                above = target >= self.diagnostic_target_clip[:, 1]
+                fenced = below | above
+                self.diagnostic_target_counts[:-1] += fenced.sum(dim=0)
+                self.diagnostic_target_counts[-1] += fenced.any(dim=1).sum()
+                self.diagnostic_target_lo += below.sum(dim=0)
+                self.diagnostic_target_hi += above.sum(dim=0)
+            self.diagnostic_samples += actions.shape[0]
+        result = super().step(actions)
+        if self.walk_metrics is not None:
+            self.walk_metrics.update(self.unwrapped)
+        return result
+
+    def take_action_diagnostics(self):
+        samples = max(1, self.diagnostic_samples)
+        counts = self.diagnostic_counts.detach().cpu().tolist()
+        self.diagnostic_counts.zero_()
+        self.diagnostic_samples = 0
+        values = {
+            f"Policy/runner_clip_fraction/{name}": counts[index] / samples
+            for index, name in enumerate(self.diagnostic_joint_names)
+        }
+        values["Policy/runner_clip_any_fraction"] = counts[-2] / samples
+        values["Policy/runner_clip_element_fraction"] = sum(counts[:-2]) / (
+            samples * len(self.diagnostic_joint_names)
+        )
+        values["Policy/raw_action_nonfinite_fraction"] = counts[-1] / (
+            samples * len(self.diagnostic_joint_names)
+        )
+        if self.diagnostic_target_clip is not None:
+            target_counts = self.diagnostic_target_counts.detach().cpu().tolist()
+            self.diagnostic_target_counts.zero_()
+            lo_counts = self.diagnostic_target_lo.detach().cpu().tolist()
+            hi_counts = self.diagnostic_target_hi.detach().cpu().tolist()
+            self.diagnostic_target_lo.zero_()
+            self.diagnostic_target_hi.zero_()
+            for index, name in enumerate(self.diagnostic_joint_names):
+                values[f"Policy/target_clip_fraction/{name}"] = target_counts[index] / samples
+                values[f"Policy/target_clip_lo_fraction/{name}"] = lo_counts[index] / samples
+                values[f"Policy/target_clip_hi_fraction/{name}"] = hi_counts[index] / samples
+            values["Policy/target_clip_any_fraction"] = target_counts[-1] / samples
+            values["Policy/target_clip_element_fraction"] = sum(target_counts[:-1]) / (
+                samples * len(self.diagnostic_joint_names)
+            )
+        if self.walk_metrics is not None:
+            values.update(self.walk_metrics.take_log())
+        return values
+
+
+class DiagnosticOnPolicyRunner(OnPolicyRunner):
+    def log(self, locs, width=80, pad=35):
+        super().log(locs, width=width, pad=pad)
+        policy = self.alg.policy
+        with torch.no_grad():
+            if policy.noise_std_type == "log":
+                std = policy.log_std.detach().exp()
+            else:
+                std = policy.std.detach()
+            std = std.cpu().reshape(-1)
+            scales = self.env.diagnostic_scales.detach().cpu()
+            names = self.env.diagnostic_joint_names
+            if std.numel() != len(names):
+                raise ValueError("Policy diagnostics require state-independent per-joint std")
+            physical_std = std * scales * (180.0 / math.pi)
+            values = self.env.take_action_diagnostics()
+            for index, name in enumerate(names):
+                values[f"Policy/std/{name}"] = std[index].item()
+                values[f"Policy/preclip_target_std_deg/{name}"] = physical_std[index].item()
+            valid = bool(torch.isfinite(std).all() and (std > 0).all())
+            values["Policy/std_valid"] = float(valid)
+            values["Policy/std_max"] = std.max().item()
+            values["Policy/std_spread"] = (std.max() / std.min()).item() if valid else math.inf
+            values["Policy/preclip_target_std_deg_max"] = physical_std.max().item()
+            values["Policy/std_gate_pass"] = float(
+                valid and std.max() < 3.0 and std.max() / std.min() < 10.0
+                and physical_std.max() < 10.0
+            )
+        for name, value in values.items():
+            self.writer.add_scalar(name, value, locs["it"])
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -192,11 +332,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     start_time = time.time()
 
     # wrap around environment for rsl-rl
-    env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+    wrapper = DiagnosticVecEnvWrapper if agent_cfg.class_name == "OnPolicyRunner" else RslRlVecEnvWrapper
+    env = wrapper(env, clip_actions=agent_cfg.clip_actions)
 
     # create runner from rsl-rl
     if agent_cfg.class_name == "OnPolicyRunner":
-        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+        runner = DiagnosticOnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     elif agent_cfg.class_name == "DistillationRunner":
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     else:

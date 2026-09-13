@@ -75,7 +75,10 @@ _build
 /datasets/
 
 # Tests
-tests/
+tests/*
+!tests/test_sigma_experiment.py
+!tests/test_curriculum.py
+!tests/test_walk_metrics.py
 
 # Docker history
 .isaac-lab-docker-history
