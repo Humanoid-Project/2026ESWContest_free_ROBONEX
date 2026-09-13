@@ -4,6 +4,11 @@ from pathlib import Path
 
 from robonex_common.joints import POLICY_JOINT_ORDER
 from robonex_common.limits import RUNNER_ACTION_CLIP, action_normalization
+from robonex_common.runtime import (
+    OBSERVATION_HISTORY_LENGTH,
+    OBSERVATION_SIZE,
+    OBSERVATION_TERM_SIZES,
+)
 from robonex_common.paths import COMMON_REPO_NAMES, DESCRIPTION_REPO_NAMES, git_commit, resolve_repo
 from robonex_common.policy import (
     PolicyContract,
@@ -53,18 +58,14 @@ def main():
         training_sha256=python_source_sha256(training_root, ("source", "scripts")),
         description_model=args.description_model,
         joint_order=POLICY_JOINT_ORDER,
-        observation_terms=(
-            "joint_pos_rel:12",
-            "joint_vel_rel:12",
-            "imu_ang_vel:3",
-            "projected_gravity:3",
-            "last_action:12",
+        observation_terms=tuple(
+            f"{name}:{size}x{OBSERVATION_HISTORY_LENGTH}" for name, size in OBSERVATION_TERM_SIZES
         ),
         action_offsets=tuple(offsets[name] for name in POLICY_JOINT_ORDER),
         action_scales=tuple(scales[name] for name in POLICY_JOINT_ORDER),
         target_clips=tuple(clips[name] for name in POLICY_JOINT_ORDER),
         runner_action_clip=RUNNER_ACTION_CLIP,
-        observation_size=42,
+        observation_size=OBSERVATION_SIZE,
         action_size=12,
         policy_hz=50.0,
         description_commit=git_commit(description_root),
