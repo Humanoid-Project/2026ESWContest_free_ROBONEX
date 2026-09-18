@@ -36,7 +36,10 @@ def lin_vel_cmd_levels(
     due = env.common_step_counter - last >= env.max_episode_length
     if due and reward > reward_term.weight * success_ratio:
         env._lin_vel_cmd_last_step = env.common_step_counter
-        low, high = ranges.lin_vel_x
-        lo_limit, hi_limit = limit_ranges.lin_vel_x
-        ranges.lin_vel_x = (max(low - delta, lo_limit), min(high + delta, hi_limit))
+        # widen x and y together, as the G1 reference does: an axis that stops being
+        # sampled is forgotten within a few hundred iterations
+        for axis in ("lin_vel_x", "lin_vel_y", "ang_vel_z"):
+            low, high = getattr(ranges, axis)
+            lo_limit, hi_limit = getattr(limit_ranges, axis)
+            setattr(ranges, axis, (max(low - delta, lo_limit), min(high + delta, hi_limit)))
     return float(ranges.lin_vel_x[1])

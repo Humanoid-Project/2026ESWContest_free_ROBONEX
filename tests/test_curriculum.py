@@ -20,9 +20,11 @@ def load(name):
 
 def make_env(reward, step, ranges, limits=(0.0, 0.3), weight=3.0, axis="lin_vel_x",
              term="track_lin_vel_x"):
+    span = {"lin_vel_x": ranges, "lin_vel_y": ranges, "ang_vel_z": ranges, axis: ranges}
+    bound = {"lin_vel_x": limits, "lin_vel_y": limits, "ang_vel_z": limits, axis: limits}
     cfg = types.SimpleNamespace(
-        ranges=types.SimpleNamespace(**{axis: ranges}),
-        limit_ranges=types.SimpleNamespace(**{axis: limits}),
+        ranges=types.SimpleNamespace(**span),
+        limit_ranges=types.SimpleNamespace(**bound),
     )
     env = types.SimpleNamespace()
     env.command_manager = types.SimpleNamespace(get_term=lambda _: types.SimpleNamespace(cfg=cfg))

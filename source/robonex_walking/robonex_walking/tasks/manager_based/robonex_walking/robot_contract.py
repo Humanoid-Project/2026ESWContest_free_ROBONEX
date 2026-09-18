@@ -1,5 +1,6 @@
 from robonex_common.actuators import ACTUATOR_PARAMETERS
 from robonex_common.joints import ACTUATED_JOINTS
+from robonex_common.motors import RATED_TORQUE
 from robonex_common.limits import action_normalization
 from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 
@@ -13,7 +14,25 @@ DESCRIPTION_ROOT = ROBOT_USD.parents[2]
 
 BASE_HEIGHT = 1.0710
 FOOT_ORIGIN_REST_HEIGHT = 0.06545
+# Sole corners in the foot body frame, from the collision mesh in
+# robonex-description/mujoco/robot/scene.xml (13716 verts, sole plane at z=-0.06540).
+# The body origin sits 0.151 m behind the toe and 0.062 m ahead of the heel, so a
+# toe-down pitch lifts the origin while the toe stays low: at 10 deg the origin reads
+# 60 mm of clearance while the sole is 36 mm off the ground. Checked against the full
+# mesh over pitch -16..20 deg and roll -10..10 deg, these 4 points are never optimistic
+# and are at most 4.8 mm conservative.
+FOOT_SOLE_CORNERS = (
+    (-0.0623, -0.0445, -0.0654),
+    (-0.0623, 0.0845, -0.0654),
+    (0.1505, -0.0445, -0.0654),
+    (0.1505, 0.0845, -0.0654),
+)
+_RATED_SPINNING = {"rs02": 7.0, "rs03": 20.0}
+
 LEG_JOINTS = tuple(joint.model_name for joint in ACTUATED_JOINTS)
+
+RATED_TORQUE_STANDSTILL = {joint.model_name: RATED_TORQUE[joint.motor_model] for joint in ACTUATED_JOINTS}
+RATED_TORQUE_SPINNING = {joint.model_name: _RATED_SPINNING[joint.motor_model] for joint in ACTUATED_JOINTS}
 ACTION_OFFSETS, ACTION_SCALES, ACTION_CLIPS = action_normalization(0.01)
 CLOSED_LOOP_DEFAULT_JOINT_POS = {
     "l_hip_yaw_joint": 0.0,
@@ -59,6 +78,9 @@ __all__ = [
     "CLOSED_LOOP_DEFAULT_JOINT_POS",
     "DESCRIPTION_ROOT",
     "FOOT_ORIGIN_REST_HEIGHT",
+    "FOOT_SOLE_CORNERS",
     "LEG_JOINTS",
+    "RATED_TORQUE_STANDSTILL",
+    "RATED_TORQUE_SPINNING",
     "ROBOT_USD",
 ]
