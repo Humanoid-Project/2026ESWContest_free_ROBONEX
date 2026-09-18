@@ -363,7 +363,7 @@ class RewardsCfg:
         params={"std": TARGET_RATE_STD},
     )
     feet_gait = RewTerm(
-        func=mdp.feet_gait_centred,
+        func=mdp.feet_gait,
         weight=1.0,
         params={
             "period": GAIT_PERIOD_S,
