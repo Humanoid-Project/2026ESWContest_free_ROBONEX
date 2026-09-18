@@ -311,8 +311,8 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "static_friction_range": (0.2, 1.0),
-            "dynamic_friction_range": (0.2, 1.0),
+            "static_friction_range": (0.4, 0.8),
+            "dynamic_friction_range": (0.4, 0.8),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 64,
             "make_consistent": True,
@@ -363,7 +363,7 @@ class RewardsCfg:
         params={"std": TARGET_RATE_STD},
     )
     feet_gait = RewTerm(
-        func=mdp.feet_gait,
+        func=mdp.feet_gait_centred,
         weight=1.0,
         params={
             "period": GAIT_PERIOD_S,
