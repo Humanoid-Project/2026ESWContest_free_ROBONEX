@@ -20,6 +20,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.noise import GaussianNoiseCfg, NoiseModelWithAdditiveBiasCfg
 
 from robonex_common.runtime import OBSERVATION_HISTORY_LENGTH
+from robonex_common.runtime import GAIT_PERIOD_S as COMMON_GAIT_PERIOD_S
 
 from . import mdp
 from .robot_contract import (
@@ -28,19 +29,36 @@ from .robot_contract import (
     ACTION_SCALES,
     ACTUATOR_PARAMETERS,
     BASE_HEIGHT,
+    RATED_TORQUE_SPINNING,
+    RATED_TORQUE_STANDSTILL,
     CLOSED_LOOP_DEFAULT_JOINT_POS,
-    FOOT_ORIGIN_REST_HEIGHT,
+    FOOT_SOLE_CORNERS,
     LEG_JOINTS,
     ROBOT_USD,
 )
 
 STANCE_WIDTH = 0.321
-TARGET_SPEED_X = 0.3
+# Measured, not assumed: S18 -> S19 changed only this value and the standstill fall rate went
+# from 57/512 envs to 12/512 (docs/eval_S18_torque_overrun.json vs eval_S19_standing_stance.json).
+STANDING_STANCE_WIDTH = 0.355
+# 0.5 m/s is the user's first real walking goal (2026-09-15). The closest references by
+# architecture -- Berkeley Humanoid Lite's 12-DoF biped and humanoid-gym's XBot -- cap at
+# 0.5 and 0.6; G1 and H1 train to 1.0 but carry arms and a waist. At 0.5 the Froude number
+# is 0.17, still firmly a walk (humans transition to running near 0.5).
+TARGET_SPEED_X = 0.5
+REVERSE_SPEED_X = -0.2
 TARGET_SPEED_STD = 0.15
+TARGET_RATE_STD = 0.5
+TARGET_RATE_Z = 0.2
+TARGET_SPEED_Y = 0.2
 STEP_AIR_TIME = 0.35
 FOOT_CLEARANCE = 0.06
 CONTACT_FORCE_LIMIT = 300.0
-GAIT_PERIOD_S = 0.8
+CONTACT_FORCE_SCALE = 1.0e6
+# Single source of truth with the deploy path: robonex_common.runtime.gait_phase_at defaults
+# to this same constant, and a divergence between the two would change the clock the robot
+# runs without changing any tensor shape, so nothing downstream could catch it.
+GAIT_PERIOD_S = COMMON_GAIT_PERIOD_S
 GAIT_STANCE_FRACTION = 0.55
 
 
@@ -142,7 +160,7 @@ class CommandsCfg:
     base_velocity = mdp.UniformLevelVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(10.0, 10.0),
-        rel_standing_envs=0.0,
+        rel_standing_envs=0.15,
         rel_heading_envs=0.0,
         heading_command=False,
         debug_vis=False,
@@ -150,7 +168,9 @@ class CommandsCfg:
             lin_vel_x=(0.1, 0.1), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)
         ),
         limit_ranges=mdp.UniformLevelVelocityCommandCfg.Ranges(
-            lin_vel_x=(0.0, TARGET_SPEED_X), lin_vel_y=(0.0, 0.0), ang_vel_z=(0.0, 0.0)
+            lin_vel_x=(REVERSE_SPEED_X, TARGET_SPEED_X),
+            lin_vel_y=(-TARGET_SPEED_Y, TARGET_SPEED_Y),
+            ang_vel_z=(-TARGET_RATE_Z, TARGET_RATE_Z),
         ),
     )
 
@@ -181,7 +201,11 @@ class ObservationsCfg:
         joint_pos_rel = ObsTerm(
             func=mdp.joint_pos_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS)},
-            noise=GaussianNoiseCfg(mean=0.0, std=0.01),
+            # G1 uses Unoise(-0.01, 0.01); a uniform half-width of h has std h/sqrt(3).
+            # 0.01 was that half-width copied straight into a Gaussian std field, which
+            # made this the only observation louder than G1 (1.73x) while the other three
+            # sit at 0.87x. Measured encoder noise at rest is 0.000192 rad.
+            noise=GaussianNoiseCfg(mean=0.0, std=0.0058),
         )
         # Joint Velocity (12) (rad/s)
         joint_vel_rel = ObsTerm(
@@ -211,7 +235,10 @@ class ObservationsCfg:
         )
 
         # Gait clock (2) (sin, cos)
-        gait_phase = ObsTerm(func=mdp.gait_phase, params={"period": GAIT_PERIOD_S})
+        gait_phase = ObsTerm(
+            func=mdp.gait_phase,
+            params={"period": GAIT_PERIOD_S, "command_name": "base_velocity"},
+        )
 
         # Last Action (12)
         actions = ObsTerm(func=mdp.last_action)
@@ -237,7 +264,6 @@ class ObservationsCfg:
 @configclass
 class EventCfg:
     """Configuration for events."""
-
 
     # Initialization base_link pose/velocity
     reset_base = EventTerm(
@@ -285,10 +311,11 @@ class EventCfg:
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "static_friction_range": (0.4, 0.8),
-            "dynamic_friction_range": (0.4, 0.8),
+            "static_friction_range": (0.2, 1.0),
+            "dynamic_friction_range": (0.2, 1.0),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 64,
+            "make_consistent": True,
         },
     )
 
@@ -329,8 +356,14 @@ class RewardsCfg:
         weight=3.0,
         params={"std": TARGET_SPEED_STD},
     )
+    lin_vel_y = RewTerm(func=mdp.lin_vel_y_l2_bounded, weight=-0.3)
+    track_ang_vel_z = RewTerm(
+        func=mdp.track_ang_vel_z_exp,
+        weight=1.0,
+        params={"std": TARGET_RATE_STD},
+    )
     feet_gait = RewTerm(
-        func=mdp.feet_gait,
+        func=mdp.feet_gait_centred,
         weight=1.0,
         params={
             "period": GAIT_PERIOD_S,
@@ -342,15 +375,12 @@ class RewardsCfg:
             ),
         },
     )
-    feet_air_time = RewTerm(
-        func=mdp.feet_air_time_biped,
-        weight=1.0,
+    stand_still = RewTerm(
+        func=mdp.stand_still_airborne,
+        weight=-2.0,
         params={
-            "threshold": STEP_AIR_TIME,
             "sensor_cfg": SceneEntityCfg(
-                "contact_forces",
-                body_names=["l_foot", "r_foot"],
-                preserve_order=True,
+                "contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True
             ),
         },
     )
@@ -362,9 +392,7 @@ class RewardsCfg:
         weight=-0.3,
         params={"target_height": BASE_HEIGHT},
     )
-    lin_vel_y = RewTerm(func=mdp.lin_vel_y_l2_bounded, weight=-0.3)
     lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2_bounded, weight=-0.1)
-    ang_vel_z = RewTerm(func=mdp.ang_vel_z_l2_bounded, weight=-0.2)
     ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2_bounded, weight=-0.1)
 
     # Foot placement
@@ -373,6 +401,7 @@ class RewardsCfg:
         weight=-0.1,
         params={
             "target_width": STANCE_WIDTH,
+            "standing_width": STANDING_STANCE_WIDTH,
             "asset_cfg": SceneEntityCfg(
                 "robot",
                 body_names=["l_foot", "r_foot"],
@@ -381,13 +410,15 @@ class RewardsCfg:
         },
     )
     feet_clearance = RewTerm(
-        func=mdp.feet_clearance_l2,
+        func=mdp.feet_clearance_clock_l2,
         weight=-0.5,
         params={
-            "target_height": FOOT_ORIGIN_REST_HEIGHT + FOOT_CLEARANCE,
-            "sensor_cfg": SceneEntityCfg(
-                "contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True
-            ),
+            "target_height": FOOT_CLEARANCE,
+            "sole_corners": FOOT_SOLE_CORNERS,
+            "period": GAIT_PERIOD_S,
+            "offset": [0.0, 0.5],
+            "stance_fraction": GAIT_STANCE_FRACTION,
+            "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg(
                 "robot", body_names=["l_foot", "r_foot"], preserve_order=True
             ),
@@ -424,9 +455,10 @@ class RewardsCfg:
 
     feet_contact_force = RewTerm(
         func=mdp.feet_contact_force_l2,
-        weight=-0.1,
+        weight=-1.0,
         params={
             "threshold": CONTACT_FORCE_LIMIT,
+            "scale": CONTACT_FORCE_SCALE,
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
                 body_names=["l_foot", "r_foot"],
@@ -445,6 +477,22 @@ class RewardsCfg:
                 "robot",
                 joint_names=[".*_hip_yaw_joint", ".*_hip_roll_joint"],
             )
+        },
+    )
+    torque_overrun = RewTerm(
+        func=mdp.torque_overrun_l2,
+        weight=-0.05,
+        params={
+            "rated_standstill": RATED_TORQUE_STANDSTILL,
+            "rated_spinning": RATED_TORQUE_SPINNING,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS, preserve_order=True),
+        },
+    )
+    stand_still_pose = RewTerm(
+        func=mdp.stand_still_pose_l1,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_knee_pitch_joint"]),
         },
     )
     joint_pos_limits = RewTerm(

@@ -132,11 +132,14 @@ class SigmaExperimentTests(unittest.TestCase):
             TASK / "agents/rsl_rl_ppo_cfg.py", {"PPORunnerCfg"},
             {"configclass": lambda cls: cls, "RslRlOnPolicyRunnerCfg": object,
              "RUNNER_ACTION_CLIP": 14.0, "RslRlPpoActorCriticCfg": SimpleNamespace,
-             "RslRlPpoAlgorithmCfg": SimpleNamespace},
+             "RslRlPpoAlgorithmCfg": SimpleNamespace, "RslRlSymmetryCfg": SimpleNamespace,
+             "symmetry": SimpleNamespace(compute_symmetric_states=lambda **kw: None)},
         )
         cfg = namespace["PPORunnerCfg"]
         self.assertEqual((cfg.policy.init_noise_std, cfg.policy.noise_std_type), (1.0, "log"))
         self.assertEqual((cfg.algorithm.entropy_coef, cfg.clip_actions), (0.008, 14))
+        self.assertTrue(cfg.algorithm.symmetry_cfg.use_data_augmentation)
+        self.assertFalse(cfg.algorithm.symmetry_cfg.use_mirror_loss)
         tree = ast.parse((TASK / "robonex_walking_env_cfg.py").read_text())
         rewards = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RewardsCfg")
         terms = {node.targets[0].id: node.value for node in rewards.body if isinstance(node, ast.Assign)}

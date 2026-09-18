@@ -4,8 +4,15 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from isaaclab.utils import configclass
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
+from isaaclab_rl.rsl_rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoActorCriticCfg,
+    RslRlPpoAlgorithmCfg,
+    RslRlSymmetryCfg,
+)
 from robonex_common.limits import RUNNER_ACTION_CLIP
+
+from ..mdp import symmetry
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
@@ -39,6 +46,11 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam = 0.95,
         desired_kl = 0.01,
         max_grad_norm = 1.0,
+        symmetry_cfg = RslRlSymmetryCfg(
+            use_data_augmentation = True,
+            use_mirror_loss = False,
+            data_augmentation_func = symmetry.compute_symmetric_states,
+        ),
     )
 
 

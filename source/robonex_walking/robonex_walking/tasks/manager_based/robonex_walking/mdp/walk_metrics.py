@@ -14,8 +14,21 @@ FEET = ("l_foot", "r_foot")
 CONTACT_FORCE_THRESHOLD = 1.0
 
 
+def _quat_apply(quat: torch.Tensor, vec: torch.Tensor) -> torch.Tensor:
+    """Rotate ``vec`` by ``quat`` (w, x, y, z), broadcasting over leading dims."""
+    xyz = quat[..., 1:]
+    t = 2.0 * torch.cross(xyz, vec, dim=-1)
+    return vec + quat[..., 0:1] * t + torch.cross(xyz, t, dim=-1)
+
+
 class WalkMetrics:
-    def __init__(self, env: ManagerBasedRLEnv, rest_height: float, dt: float) -> None:
+    def __init__(
+        self,
+        env: ManagerBasedRLEnv,
+        rest_height: float,
+        dt: float,
+        sole_corners=None,
+    ) -> None:
         self.robot: Articulation = env.scene["robot"]
         self.sensor: ContactSensor = env.scene.sensors["contact_forces"]
         self.body_ids, _ = self.robot.find_bodies(list(FEET), preserve_order=True)
@@ -26,6 +39,11 @@ class WalkMetrics:
         self.dt = dt
         self.num_envs = env.num_envs
         self.device = env.device
+        self.sole_corners = (
+            torch.as_tensor(sole_corners, dtype=torch.float32, device=env.device)
+            if sole_corners is not None
+            else None
+        )
         self.step = None
         self.log: dict[str, torch.Tensor] = {}
         self._reset_state()
@@ -38,12 +56,19 @@ class WalkMetrics:
         self.last_td_foot = torch.full((n,), -1, dtype=torch.long, device=dev)
         self.since_last_td = torch.zeros(n, device=dev)
         self.swing_peak = torch.zeros(n, 2, device=dev)
+        self.swing_peak_sole = torch.zeros(n, 2, device=dev)
 
     def _reset_accumulators(self) -> None:
         dev = self.device
         self.n_steps = torch.zeros((), device=dev)
         self.contact_steps = torch.zeros(2, device=dev)
         self.phase_steps = torch.zeros(3, device=dev)
+        # The same phases counted over the MOVING envs only. The whole-population
+        # figures mix in the forced-standing slice, which caps single stance near
+        # (1 - rel_standing_envs) and makes runs with different standing fractions
+        # incomparable.
+        self.moving_phase_steps = torch.zeros(3, device=dev)
+        self.moving_steps = torch.zeros((), device=dev)
         self.td_count = torch.zeros(2, device=dev)
         self.td_alt = torch.zeros((), device=dev)
         self.td_same = torch.zeros((), device=dev)
@@ -52,6 +77,8 @@ class WalkMetrics:
         self.step_dur_n = torch.zeros((), device=dev)
         self.swing_peak_sum = torch.zeros((), device=dev)
         self.swing_peak_n = torch.zeros((), device=dev)
+        self.swing_dropped = torch.zeros((), device=dev)
+        self.swing_peak_sole_sum = torch.zeros((), device=dev)
         self.slip_sq_sum = torch.zeros((), device=dev)
         self.slip_n = torch.zeros((), device=dev)
         self.action_sum = torch.zeros(len(self.joint_names), device=dev)
@@ -87,12 +114,30 @@ class WalkMetrics:
             self.prev_contact[fresh] = contact[fresh]
             self.last_td_foot[fresh] = -1
             self.since_last_td[fresh] = 0.0
+            self.swing_dropped += (self.swing_peak[fresh] > 0.0).sum()
             self.swing_peak[fresh] = 0.0
+            self.swing_peak_sole[fresh] = 0.0
             self.started |= fresh
 
         body_pos = self.robot.data.body_pos_w[:, self.body_ids, :]
         height = body_pos[:, :, 2] - env.scene.env_origins[:, 2].unsqueeze(1) - self.rest_height
+        # The origin sits 0.151 m behind the toe, so pitching the foot down lifts the
+        # origin without lifting the sole. Track the lowest sole corner as well, or a
+        # policy can score full clearance with its toe still on the ground.
         airborne = ~contact
+        if self.sole_corners is not None:
+            quat = self.robot.data.body_quat_w[:, self.body_ids, :].unsqueeze(2)
+            corners = self.sole_corners.view(1, 1, -1, 3).expand(
+                quat.shape[0], quat.shape[1], -1, -1
+            )
+            corner_z = _quat_apply(
+                quat.expand(-1, -1, corners.shape[2], -1), corners
+            )[..., 2]
+            sole = (body_pos[:, :, 2].unsqueeze(-1) + corner_z).amin(dim=-1)
+            sole = sole - env.scene.env_origins[:, 2].unsqueeze(1)
+            self.swing_peak_sole = torch.where(
+                airborne, torch.maximum(self.swing_peak_sole, sole), self.swing_peak_sole
+            )
         self.swing_peak = torch.where(airborne, torch.maximum(self.swing_peak, height), self.swing_peak)
 
         body_vel = self.robot.data.body_lin_vel_w[:, self.body_ids, :2]
@@ -106,6 +151,13 @@ class WalkMetrics:
         self.phase_steps[0] += (n_contact == 1).sum()
         self.phase_steps[1] += (n_contact == 2).sum()
         self.phase_steps[2] += (n_contact == 0).sum()
+
+        moving = self._moving_mask(env)
+        if moving is not None:
+            self.moving_phase_steps[0] += ((n_contact == 1) & moving).sum()
+            self.moving_phase_steps[1] += ((n_contact == 2) & moving).sum()
+            self.moving_phase_steps[2] += ((n_contact == 0) & moving).sum()
+            self.moving_steps += moving.sum()
         self.contact_steps += contact.sum(dim=0)
         self.n_steps += contact.shape[0]
 
@@ -120,8 +172,10 @@ class WalkMetrics:
             hit = touchdown[:, foot]
             peak = self.swing_peak[hit, foot]
             self.swing_peak_sum += peak.sum()
+            self.swing_peak_sole_sum += self.swing_peak_sole[hit, foot].sum()
             self.swing_peak_n += peak.numel()
             self.swing_peak[hit, foot] = 0.0
+            self.swing_peak_sole[hit, foot] = 0.0
 
             hit = hit & ~simultaneous
             if not bool(hit.any()):
@@ -144,6 +198,15 @@ class WalkMetrics:
 
         self.prev_contact = contact
 
+    @staticmethod
+    def _moving_mask(env: ManagerBasedRLEnv, deadband: float = 0.05):
+        """Envs whose velocity command is outside the standing deadband."""
+        manager = getattr(env, "command_manager", None)
+        if manager is None or "base_velocity" not in manager.active_terms:
+            return None
+        command = manager.get_command("base_velocity")
+        return torch.linalg.norm(command, dim=1) > deadband
+
     def take_log(self) -> dict[str, float]:
         steps = torch.clamp(self.n_steps, min=1.0)
         seconds = torch.clamp(self.n_steps * self.dt, min=1e-6)
@@ -154,6 +217,13 @@ class WalkMetrics:
             "Gait/single_stance_frac": (self.phase_steps[0] / steps).item(),
             "Gait/double_stance_frac": (self.phase_steps[1] / steps).item(),
             "Gait/flight_frac": (self.phase_steps[2] / steps).item(),
+            "Gait/single_stance_frac_moving": (
+                self.moving_phase_steps[0] / torch.clamp(self.moving_steps, min=1.0)
+            ).item(),
+            "Gait/double_stance_frac_moving": (
+                self.moving_phase_steps[1] / torch.clamp(self.moving_steps, min=1.0)
+            ).item(),
+            "Gait/moving_sample_frac": (self.moving_steps / steps).item(),
             "Gait/touchdown_hz_l": (self.td_count[0] / seconds).item(),
             "Gait/touchdown_hz_r": (self.td_count[1] / seconds).item(),
             "Gait/same_foot_td_frac": (self.td_same / td_total).item(),
@@ -163,6 +233,13 @@ class WalkMetrics:
             ).item(),
             "Gait/swing_peak_m": (
                 self.swing_peak_sum / torch.clamp(self.swing_peak_n, min=1.0)
+            ).item(),
+            "Gait/swing_peak_sole_m": (
+                self.swing_peak_sole_sum / torch.clamp(self.swing_peak_n, min=1.0)
+            ).item(),
+            "Gait/swing_censored_frac": (
+                self.swing_dropped
+                / torch.clamp(self.swing_peak_n + self.swing_dropped, min=1.0)
             ).item(),
             "Gait/contact_slip_m_s": torch.sqrt(
                 self.slip_sq_sum / torch.clamp(self.slip_n, min=1.0)
