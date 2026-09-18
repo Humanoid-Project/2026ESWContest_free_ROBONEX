@@ -86,3 +86,13 @@ tests/*
 # TacSL sensor
 **/tactile_record/*
 **/gelsight_r15_data/*
+
+# Measurement traces: large, machine-specific, regenerable
+results/
+
+# Experiment record: pre-registrations, evaluations and review notes.
+# Kept local, like robstride-motor-test/docs (user decision 2026-08-29).
+docs/
+
+# Run logs, sorted into test-log/{train,eval,trace,export,other}
+test-log/
