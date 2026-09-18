@@ -147,10 +147,14 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
             )
             from robonex_walking.tasks.manager_based.robonex_walking.robot_contract import (
                 FOOT_ORIGIN_REST_HEIGHT,
+                FOOT_SOLE_CORNERS,
             )
 
             self.walk_metrics = WalkMetrics(
-                self.unwrapped, FOOT_ORIGIN_REST_HEIGHT, self.unwrapped.step_dt
+                self.unwrapped,
+                FOOT_ORIGIN_REST_HEIGHT,
+                self.unwrapped.step_dt,
+                sole_corners=FOOT_SOLE_CORNERS,
             )
 
     def step(self, actions):
