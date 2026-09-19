@@ -96,3 +96,7 @@ docs/
 
 # Run logs, sorted into test-log/{train,eval,trace,export,other}
 test-log/
+
+# Retired experiment artifacts: every run, evaluation and log except the
+# current deploy candidate. Large and regenerable, same as results/ and logs/.
+etc/
