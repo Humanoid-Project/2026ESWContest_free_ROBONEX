@@ -32,6 +32,7 @@ import gymnasium as gym
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+import isaaclab.utils.math as math_utils
 import robonex_walking.tasks  # noqa: F401
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
@@ -79,6 +80,29 @@ def main():
     contact_bodies = list(contact.body_names)
     contact_ids = [contact_bodies.index(n) for n in ("l_foot", "r_foot")]
 
+    # Mirrors of the reward-side quantities that world-frame columns cannot reconstruct.
+    # feet_stance_width_l2 reads the foot separation in the BASE frame; a yawing robot makes
+    # the world-frame separation a different number entirely.
+    from robonex_walking.tasks.manager_based.robonex_walking.robot_contract import FOOT_SOLE_CORNERS
+    from robonex_common.runtime import GAIT_PERIOD_S
+    sole = torch.as_tensor(FOOT_SOLE_CORNERS, dtype=torch.float32, device=unwrapped.device)
+    stance_fraction = 0.55
+    # _clip, _scale and _offset may or may not carry a leading env dimension depending on
+    # how the term was configured; reduce each to this one env's per-joint row.
+    def _row(value):
+        if value is None:
+            return None
+        t = torch.as_tensor(value, dtype=torch.float32, device=unwrapped.device)
+        while t.ndim > 0 and t.shape[0] == unwrapped.num_envs and t.ndim > 1:
+            t = t[args_cli.env_index]
+        return t
+
+    clip = _row(getattr(action_term, "_clip", None))
+    act_scale = _row(action_term._scale)
+    act_offset = _row(action_term._offset)
+    print(f"[trace] clip={None if clip is None else tuple(clip.shape)} "
+          f"scale={tuple(act_scale.shape)} offset={tuple(act_offset.shape)}")
+
     short = [n.replace("_joint", "") for n in joint_names]
     header = ["t_s", "step", "dt_ms", "ramp", "cmd_vx", "cmd_vy", "cmd_wz",
               "gravity_x", "gravity_y", "gravity_z", "gyro_x", "gyro_y", "gyro_z",
@@ -87,9 +111,12 @@ def main():
               "l_foot_x", "l_foot_y", "l_foot_z", "r_foot_x", "r_foot_y", "r_foot_z",
               "l_hip_y", "l_hip_z", "r_hip_y", "r_hip_z",
               "l_foot_fx", "l_foot_fy", "l_foot_fz",
-              "r_foot_fx", "r_foot_fy", "r_foot_fz"]
+              "r_foot_fx", "r_foot_fy", "r_foot_fz",
+              "root_vz_b", "l_foot_by", "r_foot_by", "stance_width_b",
+              "l_sole_z", "r_sole_z", "l_phase", "r_phase"]
     for s in short:
-        header += [f"{s}.pos", f"{s}.vel", f"{s}.torque", f"{s}.target"]
+        header += [f"{s}.pos", f"{s}.vel", f"{s}.torque", f"{s}.target",
+                   f"{s}.raw_action", f"{s}.clip_excess"]
 
     idx = args_cli.env_index
     dt = float(unwrapped.step_dt)
@@ -98,6 +125,7 @@ def main():
     with torch.inference_mode():
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
             actions = policy(obs)
+            raw = actions[idx].clone()
             obs, _, _, _ = env.step(actions)
             if step < args_cli.warmup_steps:
                 continue
@@ -123,13 +151,36 @@ def main():
                 row += [round(float(body_p[b, k] - origin[k]), 5) for k in (1, 2)]
             for c in contact_ids:
                 row += [round(float(force[c, k]), 4) for k in range(3)]
+
+            quat = asset.data.root_quat_w[idx]
+            rel = body_p[foot_ids] - root_p.unsqueeze(0)
+            foot_b = math_utils.quat_apply_inverse(quat.unsqueeze(0).expand(2, -1), rel)
+            fq = asset.data.body_quat_w[idx, foot_ids]
+            corner_z = math_utils.quat_apply(
+                fq.unsqueeze(1).expand(-1, sole.shape[0], -1), sole.unsqueeze(0).expand(2, -1, -1)
+            )[..., 2]
+            sole_z = (body_p[foot_ids, 2].unsqueeze(-1) + corner_z).amin(dim=-1) - origin[2]
+            gphase = (float(unwrapped.episode_length_buf[idx]) * dt) % GAIT_PERIOD_S / GAIT_PERIOD_S
+            row += [round(float(root_v[2]), 5),
+                    round(float(foot_b[0, 1]), 5), round(float(foot_b[1, 1]), 5),
+                    round(float(torch.abs(foot_b[0, 1] - foot_b[1, 1])), 5),
+                    round(float(sole_z[0]), 5), round(float(sole_z[1]), 5),
+                    round(gphase % 1.0, 5), round((gphase + 0.5) % 1.0, 5)]
+
             pos = asset.data.joint_pos[idx, joint_ids]
             vel = asset.data.joint_vel[idx, joint_ids]
             tau = asset.data.applied_torque[idx, joint_ids]
             tgt = asset.data.joint_pos_target[idx, joint_ids]
+            pre = act_offset + act_scale * raw
+            if clip is not None:
+                excess = pre - torch.clamp(pre, clip[..., 0], clip[..., 1])
+            else:
+                excess = torch.zeros_like(pre)
+            excess = excess.reshape(-1)
             for j in range(len(joint_names)):
                 row += [round(float(pos[j]), 5), round(float(vel[j]), 5),
-                        round(float(tau[j]), 5), round(float(tgt[j]), 5)]
+                        round(float(tau[j]), 5), round(float(tgt[j]), 5),
+                        round(float(raw[j]), 5), round(float(excess[j]), 6)]
             rows.append(row)
 
     out = os.path.abspath(args_cli.out)
