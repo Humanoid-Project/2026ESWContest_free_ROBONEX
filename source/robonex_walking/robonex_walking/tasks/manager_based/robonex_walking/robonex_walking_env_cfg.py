@@ -386,7 +386,7 @@ class RewardsCfg:
     )
 
     # Posture
-    flat_orientation = RewTerm(func=mdp.flat_orientation_l2_bounded, weight=-0.5)
+    flat_orientation = RewTerm(func=mdp.flat_orientation_l2_bounded, weight=-1.0)
     base_height = RewTerm(
         func=mdp.base_height_l2_bounded,
         weight=-0.3,
