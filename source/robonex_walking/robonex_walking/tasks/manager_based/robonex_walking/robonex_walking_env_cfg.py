@@ -398,7 +398,7 @@ class RewardsCfg:
     # Foot placement
     feet_width = RewTerm(
         func=mdp.feet_stance_width_l2,
-        weight=-0.1,
+        weight=-0.3,
         params={
             "target_width": STANCE_WIDTH,
             "standing_width": STANDING_STANCE_WIDTH,
