@@ -468,7 +468,7 @@ class RewardsCfg:
     )
 
     # Regularization
-    action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-0.8)
+    action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-2.0)
     joint_deviation_yaw_roll = RewTerm(
         func=mdp.joint_deviation_l1_bounded,
         weight=-0.2,
