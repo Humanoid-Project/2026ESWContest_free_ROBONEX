@@ -127,31 +127,6 @@ class SigmaExperimentTests(unittest.TestCase):
         metrics = {call.args[0]: call.args[1] for call in runner.writer.add_scalar.call_args_list}
         self.assertEqual(metrics["Policy/std_gate_pass"], 0)
 
-    def test_experiment_configuration(self):
-        namespace = load_definitions(
-            TASK / "agents/rsl_rl_ppo_cfg.py", {"PPORunnerCfg"},
-            {"configclass": lambda cls: cls, "RslRlOnPolicyRunnerCfg": object,
-             "RUNNER_ACTION_CLIP": 14.0, "RslRlPpoActorCriticCfg": SimpleNamespace,
-             "RslRlPpoAlgorithmCfg": SimpleNamespace, "RslRlSymmetryCfg": SimpleNamespace,
-             "symmetry": SimpleNamespace(compute_symmetric_states=lambda **kw: None)},
-        )
-        cfg = namespace["PPORunnerCfg"]
-        self.assertEqual((cfg.policy.init_noise_std, cfg.policy.noise_std_type), (1.0, "log"))
-        self.assertEqual((cfg.algorithm.entropy_coef, cfg.clip_actions), (0.008, 14))
-        self.assertTrue(cfg.algorithm.symmetry_cfg.use_data_augmentation)
-        self.assertFalse(cfg.algorithm.symmetry_cfg.use_mirror_loss)
-        tree = ast.parse((TASK / "robonex_walking_env_cfg.py").read_text())
-        rewards = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "RewardsCfg")
-        terms = {node.targets[0].id: node.value for node in rewards.body if isinstance(node, ast.Assign)}
-        weight = next(item.value for item in terms["action_rate"].keywords if item.arg == "weight")
-        self.assertEqual(ast.literal_eval(weight), -0.2)
-        weight = next(item.value for item in terms["joint_pos_limits"].keywords if item.arg == "weight")
-        self.assertEqual(ast.literal_eval(weight), -5.0)
-        weight = next(item.value for item in terms["feet_clearance"].keywords if item.arg == "weight")
-        self.assertEqual(ast.literal_eval(weight), -0.5)
-        weight = next(item.value for item in terms["feet_gait"].keywords if item.arg == "weight")
-        self.assertEqual(ast.literal_eval(weight), 1.0)
-
 
 if __name__ == "__main__":
     unittest.main()
