@@ -1,102 +1,17 @@
-# C++
-**/cmake-build*/
-**/build*/
-**/*.so
-**/*.log*
-
-# Omniverse
-**/*.dmp
-**/.thumbs
-
-# No USD files allowed in the repo
-**/*.usd
-**/*.usda
-**/*.usdc
-**/*.usdz
-
-# Agent tooling
-.agents/
+# Agent settings
 .claude/
 .codex/
-.grok/
-AGENTS.md
 
 # Python
-.DS_Store
-.venv/
-.venv*/
-venv/
-**/*.egg-info/
-**/__pycache__/
-**/.pytest_cache/
-**/*.pyc
-**/*.pb
+__pycache__/
+.pytest_cache/
+*.egg-info/
 
-# Docker/Singularity
-**/*.sif
-docker/cluster/exports/
-docker/.container.cfg
+# Training runs (Isaac Lab / Hydra)
+logs/
+outputs/
 
-# IDE
-**/.idea/
-**/.vscode/
-
-# Outputs
-**/output/*
-**/outputs/*
-**/videos/*
-**/wandb/*
-**/.neptune/*
-docker/artifacts/
-*.tmp
-
-# Doc Outputs
-**/docs/_build/*
-**/generated/*
-
-# Isaac-Sim packman
-_isaac_sim*
-_repo
-_build
-.lastformat
-
-# RL-Games
-**/runs/*
-**/logs/*
-**/recordings/*
-
-# Pre-Trained Checkpoints
-/.pretrained_checkpoints/
-**/exports/*
-**/*.onnx
-**/*.pt
-
-# Teleop Recorded Dataset
-/datasets/
-
-# Tests
-tests/*
-!tests/test_sigma_experiment.py
-!tests/test_curriculum.py
-!tests/test_walk_metrics.py
-
-# Docker history
-.isaac-lab-docker-history
-
-# TacSL sensor
-**/tactile_record/*
-**/gelsight_r15_data/*
-
-# Measurement traces: large, machine-specific, regenerable
+# Local experiment records
 results/
-
-# Experiment record: pre-registrations, evaluations and review notes.
-# Kept local, like robstride-motor-test/docs (user decision 2026-08-29).
-docs/
-
-# Run logs, sorted into test-log/{train,eval,trace,export,other}
 test-log/
-
-# Retired experiment artifacts: every run, evaluation and log except the
-# current deploy candidate. Large and regenerable, same as results/ and logs/.
 etc/
