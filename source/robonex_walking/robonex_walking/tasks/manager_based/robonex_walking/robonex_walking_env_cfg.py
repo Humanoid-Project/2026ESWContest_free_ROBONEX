@@ -220,7 +220,7 @@ class ObservationsCfg:
             params={"asset_cfg": SceneEntityCfg("imu")},
             noise=NoiseModelWithAdditiveBiasCfg(
                 noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.1),
-                bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.05),
+                bias_noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.05, operation="abs"),
             ),
         )
         # Projected gravity (3)
@@ -468,7 +468,7 @@ class RewardsCfg:
     )
 
     # Regularization
-    action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-2.0)
+    action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-0.2)
     joint_deviation_yaw_roll = RewTerm(
         func=mdp.joint_deviation_l1_bounded,
         weight=-0.2,
