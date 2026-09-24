@@ -21,6 +21,14 @@ parser.add_argument("--measure_steps", type=int, default=1650)
 parser.add_argument("--env_index", type=int, default=0, help="Which env's trace to write")
 parser.add_argument("--out", type=str, required=True)
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--registry_cfg", action="store_true",
+                    help="Use the current task config instead of the checkpoint's params/env.yaml")
+parser.add_argument("--keep_randomization", action="store_true",
+                    help="Keep domain randomization and pushes (default: only the reset events)")
+parser.add_argument("--slew_limit", action="store_true",
+                    help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
+parser.add_argument("--obs_delay", type=int, default=0,
+                    help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -34,12 +42,23 @@ from rsl_rl.runners import OnPolicyRunner
 
 import isaaclab.utils.math as math_utils
 import robonex_walking.tasks  # noqa: F401
+from deploy_effects import (
+    apply_training_env_cfg,
+    disable_randomization,
+    install_joint_obs_delay,
+    install_slew_limiter,
+)
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 
 
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
+    if not args_cli.registry_cfg:
+        print(f"[trace] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
+        env_cfg.scene.num_envs = args_cli.num_envs
+    if not args_cli.keep_randomization:
+        print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg)}")
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)
@@ -54,6 +73,11 @@ def main():
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
     unwrapped = env.unwrapped
+    if args_cli.slew_limit:
+        install_slew_limiter(unwrapped)
+        print("[trace] deploy slew limiter on joint targets")
+    if args_cli.obs_delay:
+        print(f"[trace] observation delay {args_cli.obs_delay} step(s) on {install_joint_obs_delay(unwrapped, args_cli.obs_delay)}")
     term = unwrapped.command_manager.get_term("base_velocity")
     forced = torch.zeros(unwrapped.num_envs, 3, device=unwrapped.device)
     forced[:, 0] = args_cli.vx
@@ -89,17 +113,18 @@ def main():
     stance_fraction = 0.55
     # _clip, _scale and _offset may or may not carry a leading env dimension depending on
     # how the term was configured; reduce each to this one env's per-joint row.
-    def _row(value):
+    def _row(value, ndim):
         if value is None:
             return None
         t = torch.as_tensor(value, dtype=torch.float32, device=unwrapped.device)
-        while t.ndim > 0 and t.shape[0] == unwrapped.num_envs and t.ndim > 1:
-            t = t[args_cli.env_index]
+        while t.ndim > ndim:
+            t = t[args_cli.env_index] if t.shape[0] == unwrapped.num_envs else t[0]
         return t
 
-    clip = _row(getattr(action_term, "_clip", None))
-    act_scale = _row(action_term._scale)
-    act_offset = _row(action_term._offset)
+    clip = _row(getattr(action_term, "_clip", None), 2)
+    act_scale = _row(action_term._scale, 1)
+    act_offset = _row(action_term._offset, 1)
+    runner_clip = float(agent_cfg.clip_actions) if agent_cfg.clip_actions else float("inf")
     print(f"[trace] clip={None if clip is None else tuple(clip.shape)} "
           f"scale={tuple(act_scale.shape)} offset={tuple(act_offset.shape)}")
 
@@ -113,7 +138,7 @@ def main():
               "l_foot_fx", "l_foot_fy", "l_foot_fz",
               "r_foot_fx", "r_foot_fy", "r_foot_fz",
               "root_vz_b", "l_foot_by", "r_foot_by", "stance_width_b",
-              "l_sole_z", "r_sole_z", "l_phase", "r_phase"]
+              "l_sole_z", "r_sole_z", "l_phase", "r_phase", "reset"]
     for s in short:
         header += [f"{s}.pos", f"{s}.vel", f"{s}.torque", f"{s}.target",
                    f"{s}.raw_action", f"{s}.clip_excess"]
@@ -126,7 +151,7 @@ def main():
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
             actions = policy(obs)
             raw = actions[idx].clone()
-            obs, _, _, _ = env.step(actions)
+            obs, _, dones, _ = env.step(actions)
             if step < args_cli.warmup_steps:
                 continue
             n = step - args_cli.warmup_steps
@@ -165,13 +190,13 @@ def main():
                     round(float(foot_b[0, 1]), 5), round(float(foot_b[1, 1]), 5),
                     round(float(torch.abs(foot_b[0, 1] - foot_b[1, 1])), 5),
                     round(float(sole_z[0]), 5), round(float(sole_z[1]), 5),
-                    round(gphase % 1.0, 5), round((gphase + 0.5) % 1.0, 5)]
+                    round(gphase % 1.0, 5), round((gphase + 0.5) % 1.0, 5), int(dones[idx])]
 
             pos = asset.data.joint_pos[idx, joint_ids]
             vel = asset.data.joint_vel[idx, joint_ids]
             tau = asset.data.applied_torque[idx, joint_ids]
             tgt = asset.data.joint_pos_target[idx, joint_ids]
-            pre = act_offset + act_scale * raw
+            pre = act_offset + act_scale * torch.clamp(raw, -runner_clip, runner_clip)
             if clip is not None:
                 excess = pre - torch.clamp(pre, clip[..., 0], clip[..., 1])
             else:

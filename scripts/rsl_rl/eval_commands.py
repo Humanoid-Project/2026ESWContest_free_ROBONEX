@@ -18,6 +18,12 @@ parser.add_argument("--cells", type=str, default=None)
 parser.add_argument("--seed", type=int, default=0, help="Environment seed; keep fixed across compared checkpoints")
 parser.add_argument("--strict", action="store_true",
                     help="Exit instead of evaluating when the live env disagrees with the checkpoint's params/env.yaml")
+parser.add_argument("--training_cfg", action="store_true",
+                    help="Build the env from the checkpoint's params/env.yaml instead of the current code")
+parser.add_argument("--slew_limit", action="store_true",
+                    help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
+parser.add_argument("--obs_delay", type=int, default=0,
+                    help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -31,6 +37,7 @@ import torch
 from rsl_rl.runners import OnPolicyRunner
 
 import robonex_walking.tasks  # noqa: F401
+from deploy_effects import apply_training_env_cfg, install_joint_obs_delay, install_slew_limiter
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 from robonex_walking.tasks.manager_based.robonex_walking.mdp.walk_metrics import WalkMetrics
@@ -45,9 +52,9 @@ CELLS = {
     "fwd_goal": (0.5, 0.0, 0.0),
     "stop": (0.0, 0.0, 0.0),
     "back": (-0.2, 0.0, 0.0),
-    "turn_l": (0.1, 0.0, 0.4),
-    "turn_r": (0.1, 0.0, -0.4),
-    "turn_still": (0.0, 0.0, 0.4),
+    "turn_l": (0.1, 0.0, 0.2),
+    "turn_r": (0.1, 0.0, -0.2),
+    "turn_still": (0.0, 0.0, 0.2),
     "strafe_l": (0.0, 0.2, 0.0),
     "strafe_r": (0.0, -0.2, 0.0),
     "diag": (0.2, 0.1, 0.2),
@@ -291,6 +298,9 @@ def check_training_config(checkpoint, applied):
 
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
+    if args_cli.training_cfg:
+        print(f"[eval] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
+        env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
 
@@ -305,6 +315,9 @@ def main():
     policy = runner.get_inference_policy(device=env.unwrapped.device)
 
     unwrapped = env.unwrapped
+    if args_cli.slew_limit:
+        install_slew_limiter(unwrapped)
+    obs_delayed = install_joint_obs_delay(unwrapped, args_cli.obs_delay) if args_cli.obs_delay else []
     term = unwrapped.command_manager.get_term("base_velocity")
     forced = torch.zeros(unwrapped.num_envs, 3, device=unwrapped.device)
     term._resample_command = lambda env_ids: None
@@ -334,6 +347,12 @@ def main():
     checkpoint = os.path.abspath(args_cli.checkpoint)
     digest = hashlib.sha256(pathlib.Path(checkpoint).read_bytes()).hexdigest()[:16]
     applied = {
+        "deploy_effects": {
+            "training_cfg": bool(args_cli.training_cfg),
+            "slew_limit": bool(args_cli.slew_limit),
+            "obs_delay_steps": int(args_cli.obs_delay),
+            "obs_delay_terms": obs_delayed,
+        },
         "joint_order": joint_names,
         "action_scale": {n: float(act_scale[0, i]) for i, n in enumerate(joint_names)},
         "action_offset": {n: float(act_offset[0, i]) for i, n in enumerate(joint_names)},
