@@ -342,6 +342,17 @@ class EventCfg:
         },
     )
 
+    randomize_hip_yaw_stiffness = EventTerm(
+        func=mdp.randomize_actuator_gains,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_yaw_joint"]),
+            "stiffness_distribution_params": (0.25, 1.0),
+            "operation": "scale",
+            "distribution": "uniform",
+        },
+    )
+
 
 @configclass
 class RewardsCfg:
