@@ -31,6 +31,14 @@ def apply_training_env_cfg(env_cfg, checkpoint):
     for key in ("viewer", "log_dir", "seed"):
         saved.pop(key, None)
     update_class_from_dict(env_cfg, saved)
+    for manager in ("events", "rewards", "terminations", "curriculum"):
+        section = getattr(env_cfg, manager, None)
+        trained = saved.get(manager) or {}
+        if section is None:
+            continue
+        for name in list(vars(section)):
+            if not name.startswith("_") and name not in trained:
+                setattr(section, name, None)
     return path
 
 
