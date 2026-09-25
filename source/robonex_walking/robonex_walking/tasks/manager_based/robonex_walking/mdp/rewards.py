@@ -716,6 +716,17 @@ def feet_contact_force_l2(
     return _saturate(torch.sum(torch.square(torch.clamp(peak - threshold, min=0.0)), dim=1), scale)
 
 
+def feet_contact_force_mean_l2(
+    env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg,
+    scale: float = 10000.0,
+) -> torch.Tensor:
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    forces = sensor.data.net_forces_w_history[:, : env.cfg.decimation, sensor_cfg.body_ids, :]
+    forces = torch.nan_to_num(forces, nan=0.0, posinf=0.0, neginf=0.0)
+    mean = torch.norm(forces.mean(dim=1), dim=-1)
+    return _saturate(torch.sum(torch.square(torch.clamp(mean - threshold, min=0.0)), dim=1), scale)
+
+
 def nonfinite_contact(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
     forces = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :]

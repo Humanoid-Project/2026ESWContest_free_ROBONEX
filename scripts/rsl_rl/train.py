@@ -150,11 +150,12 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
                 FOOT_SOLE_CORNERS,
             )
 
+            cfg = self.unwrapped.cfg
             self.walk_metrics = WalkMetrics(
                 self.unwrapped,
-                FOOT_ORIGIN_REST_HEIGHT,
+                getattr(cfg, "foot_origin_rest_height", FOOT_ORIGIN_REST_HEIGHT),
                 self.unwrapped.step_dt,
-                sole_corners=FOOT_SOLE_CORNERS,
+                sole_corners=getattr(cfg, "foot_sole_corners", FOOT_SOLE_CORNERS),
             )
 
     def step(self, actions):

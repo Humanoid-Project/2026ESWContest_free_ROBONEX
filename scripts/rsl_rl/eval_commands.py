@@ -325,9 +325,9 @@ def main():
 
     metrics = WalkMetrics(
         unwrapped,
-        FOOT_ORIGIN_REST_HEIGHT,
+        getattr(unwrapped.cfg, "foot_origin_rest_height", FOOT_ORIGIN_REST_HEIGHT),
         unwrapped.step_dt,
-        sole_corners=FOOT_SOLE_CORNERS,
+        sole_corners=getattr(unwrapped.cfg, "foot_sole_corners", FOOT_SOLE_CORNERS),
     )
 
     action_term = unwrapped.action_manager.get_term("joint_pos")
