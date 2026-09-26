@@ -16,6 +16,9 @@ parser.add_argument("--checkpoint", type=str, required=True)
 parser.add_argument("--vx", type=float, default=0.0)
 parser.add_argument("--vy", type=float, default=0.0)
 parser.add_argument("--wz", type=float, default=0.0)
+parser.add_argument("--scenario", type=str, default=None, metavar="T:VX,VY,WZ;...",
+                    help="Command schedule in seconds from the start of the measurement, e.g. 0:0,0,0;10:0.1,0,0;20:0.2,0,0; "
+                    "replaces --vx/--vy/--wz (the warm-up uses the first command)")
 parser.add_argument("--warmup_steps", type=int, default=150)
 parser.add_argument("--measure_steps", type=int, default=1650)
 parser.add_argument("--env_index", type=int, default=0, help="Which env's trace to write")
@@ -27,6 +30,8 @@ parser.add_argument("--keep_randomization", action="store_true",
                     help="Keep domain randomization and pushes (default: only the reset events)")
 parser.add_argument("--slew_limit", action="store_true",
                     help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
+parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE",
+                    help="Override a float in the env config, e.g. scene.robot.actuators.rs02.stiffness.l_hip_yaw_joint=25")
 parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
 AppLauncher.add_app_launcher_args(parser)
@@ -59,6 +64,21 @@ def main():
         env_cfg.scene.num_envs = args_cli.num_envs
     if not args_cli.keep_randomization:
         print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg)}")
+    for item in args_cli.set:
+        path, value = item.split("=", 1)
+        *parents, leaf = path.split(".")
+        node = env_cfg
+        for key in parents:
+            node = node[key] if isinstance(node, dict) else getattr(node, key)
+        if isinstance(node, dict):
+            if leaf not in node:
+                raise KeyError(f"--set {path}: {leaf!r} not in {sorted(node)}")
+            node[leaf] = float(value)
+        else:
+            if not hasattr(node, leaf):
+                raise AttributeError(f"--set {path}: no attribute {leaf!r}")
+            setattr(node, leaf, float(value))
+        print(f"[trace] set {path} = {float(value)}")
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)
@@ -79,10 +99,21 @@ def main():
     if args_cli.obs_delay:
         print(f"[trace] observation delay {args_cli.obs_delay} step(s) on {install_joint_obs_delay(unwrapped, args_cli.obs_delay)}")
     term = unwrapped.command_manager.get_term("base_velocity")
+    schedule = [(0.0, (args_cli.vx, args_cli.vy, args_cli.wz))]
+    if args_cli.scenario:
+        schedule = []
+        for part in args_cli.scenario.split(";"):
+            start, values = part.split(":")
+            schedule.append((float(start), tuple(float(v) for v in values.split(","))))
+        schedule.sort()
+        if schedule[0][0] != 0.0 or any(len(v) != 3 for _, v in schedule):
+            raise ValueError("--scenario must start at 0 and give vx,vy,wz for every segment")
+
+    def command_at(t):
+        return [v for start, v in schedule if start <= t][-1]
+
     forced = torch.zeros(unwrapped.num_envs, 3, device=unwrapped.device)
-    forced[:, 0] = args_cli.vx
-    forced[:, 1] = args_cli.vy
-    forced[:, 2] = args_cli.wz
+    forced[:] = torch.tensor(command_at(0.0), device=unwrapped.device)
     term._resample_command = lambda env_ids: None
     term._update_command = lambda: term.vel_command_b.copy_(forced)
 
@@ -149,6 +180,8 @@ def main():
     obs = env.get_observations()
     with torch.inference_mode():
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
+            command = command_at(max(0, step - args_cli.warmup_steps) * dt)
+            forced[:] = torch.tensor(command, device=unwrapped.device)
             actions = policy(obs)
             raw = actions[idx].clone()
             obs, _, dones, _ = env.step(actions)
@@ -163,7 +196,7 @@ def main():
             force = contact.data.net_forces_w[idx]
             origin = unwrapped.scene.env_origins[idx]
             row = [round(n * dt, 4), n, round(dt * 1000.0, 3), 1.0,
-                   args_cli.vx, args_cli.vy, args_cli.wz,
+                   *command,
                    *[round(float(v), 5) for v in grav],
                    *[round(float(v), 5) for v in gyro],
                    *[round(float(root_p[k] - origin[k]), 5) for k in range(3)],

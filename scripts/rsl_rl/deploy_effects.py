@@ -71,6 +71,8 @@ def limit_step(position, velocity, target, dt, max_speed, max_accel):
 
 def install_slew_limiter(unwrapped, max_speed=DEPLOY_MAX_SPEED, max_accel=DEPLOY_MAX_ACCEL):
     term = unwrapped.action_manager.get_term("joint_pos")
+    if hasattr(term, "_slew_position"):
+        raise ValueError("the action term already applies the deploy slew limiter; do not add a second one")
     asset = unwrapped.scene["robot"]
     dt = float(unwrapped.step_dt)
     state = {

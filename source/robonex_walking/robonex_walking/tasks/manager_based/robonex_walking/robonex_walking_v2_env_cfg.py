@@ -36,6 +36,8 @@ FALL_HEIGHT_V2 = round(V1_FALL_HEIGHT * BASE_HEIGHT / V1_BASE_HEIGHT, 3)
 PHYSICS_HZ = 400
 DECIMATION = 8
 POSITION_ITERATIONS = 32
+DEPLOY_MAX_SPEED = 6.0
+DEPLOY_MAX_ACCEL = 120.0
 
 
 @configclass
@@ -59,9 +61,16 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
         self.scene.contact_forces.history_length = DECIMATION
 
         action = self.actions.joint_pos
-        action.offset = ACTION_OFFSETS
-        action.scale = ACTION_SCALES
-        action.clip = ACTION_CLIPS
+        self.actions.joint_pos = mdp.SlewLimitedJointPositionActionCfg(
+            asset_name=action.asset_name,
+            joint_names=action.joint_names,
+            offset=ACTION_OFFSETS,
+            scale=ACTION_SCALES,
+            clip=ACTION_CLIPS,
+            use_default_offset=action.use_default_offset,
+            max_speed=DEPLOY_MAX_SPEED,
+            max_accel=DEPLOY_MAX_ACCEL,
+        )
 
         self.rewards.base_height.params["target_height"] = BASE_HEIGHT
         self.rewards.feet_width.params["target_width"] = STANCE_WIDTH_DEFAULT
