@@ -99,6 +99,23 @@ def write_receipt(manifest_path, policy, checkpoint, training_root, contract):
     print(path)
 
 
+def saved_action_normalization(saved_env):
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    Loader.add_constructor("tag:yaml.org,2002:python/tuple", lambda loader, node: tuple(loader.construct_sequence(node)))
+    Loader.add_multi_constructor("", lambda loader, suffix, node: None)
+    action = yaml.load(saved_env.read_text(), Loader=Loader)["actions"]["joint_pos"]
+    missing = [n for n in POLICY_JOINT_ORDER if n not in action["offset"] or n not in action["scale"] or n not in action["clip"]]
+    if missing:
+        raise SystemExit(f"{saved_env}: action normalisation lacks {missing}")
+    return ({n: float(action["offset"][n]) for n in POLICY_JOINT_ORDER},
+            {n: float(action["scale"][n]) for n in POLICY_JOINT_ORDER},
+            {n: tuple(float(v) for v in action["clip"][n]) for n in POLICY_JOINT_ORDER})
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("policy", type=Path)
@@ -113,6 +130,13 @@ def main():
              "manifest can be traced back to a training artifact; without it the receipt "
              "says so explicitly",
     )
+    parser.add_argument(
+        "--actions-from-checkpoint",
+        action="store_true",
+        help="Take action offsets/scales/clips and the task id from the checkpoint's params/env.yaml "
+             "instead of robonex-common (needed for the Ver.2 tasks, whose limits and default pose differ)",
+    )
+    parser.add_argument("--task", default=TASK)
     args = parser.parse_args()
 
     policy = args.policy.expanduser().resolve()
@@ -148,10 +172,15 @@ def main():
                   f"falling back to {DEFAULT_POLICY_HZ} Hz")
 
     offsets, scales, clips = action_normalization(0.01)
+    if args.actions_from_checkpoint:
+        if args.checkpoint is None:
+            raise SystemExit("--actions-from-checkpoint needs --checkpoint")
+        offsets, scales, clips = saved_action_normalization(
+            args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml")
 
     contract = PolicyContract(
         schema_version=2,
-        task=TASK,
+        task=args.task,
         policy_file=os.path.relpath(policy, output.parent),
         policy_sha256=sha256_file(policy),
         description_sha256=mujoco_bundle_sha256(description_root, args.description_model),
