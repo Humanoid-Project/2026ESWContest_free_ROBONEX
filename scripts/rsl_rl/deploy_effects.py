@@ -31,6 +31,7 @@ def apply_training_env_cfg(env_cfg, checkpoint):
     for key in ("viewer", "log_dir", "seed"):
         saved.pop(key, None)
     update_class_from_dict(env_cfg, saved)
+    remap_moved_usd(env_cfg)
     for manager in ("events", "rewards", "terminations", "curriculum"):
         section = getattr(env_cfg, manager, None)
         trained = saved.get(manager) or {}
@@ -40,6 +41,26 @@ def apply_training_env_cfg(env_cfg, checkpoint):
             if not name.startswith("_") and name not in trained:
                 setattr(section, name, None)
     return path
+
+
+MOVED_DESCRIPTION_PATHS = (
+    ("/robonex-description/isaac/", "/robonex-description/ver1/isaac/", "moved unchanged in the 2026-09-27 ver1/ver2 split"),
+    ("/robonex-description/new_urdf/", "/robonex-description/ver2/",
+     "Ver.2 USD regenerated 2026-09-27 with the decided hip limits; runs before W73 trained on the older limits"),
+)
+
+
+def remap_moved_usd(env_cfg):
+    spawn = env_cfg.scene.robot.spawn
+    path = getattr(spawn, "usd_path", None)
+    if not path or pathlib.Path(path).is_file():
+        return None
+    for old, new, note in MOVED_DESCRIPTION_PATHS:
+        if old in path and pathlib.Path(path.replace(old, new)).is_file():
+            spawn.usd_path = path.replace(old, new)
+            print(f"[deploy_effects] saved usd_path {path} no longer exists; using {spawn.usd_path} ({note})")
+            return spawn.usd_path
+    raise FileNotFoundError(f"saved usd_path {path} does not exist and has no known new location")
 
 
 def disable_randomization(env_cfg):
