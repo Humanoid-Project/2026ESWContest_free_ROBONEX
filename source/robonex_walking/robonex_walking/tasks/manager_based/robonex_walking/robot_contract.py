@@ -6,7 +6,7 @@ from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 
 ROBOT_USD = repo_file(
     DESCRIPTION_REPO_NAMES,
-    "isaac/closed_loop_mesh/robonex_closed_loop_mesh.usd",
+    "ver1/isaac/closed_loop_mesh/robonex_closed_loop_mesh.usd",
     env_var="ROBONEX_DESCRIPTION_ROOT",
     anchors=(__file__,),
 )
@@ -15,7 +15,7 @@ DESCRIPTION_ROOT = ROBOT_USD.parents[2]
 BASE_HEIGHT = 1.0710
 FOOT_ORIGIN_REST_HEIGHT = 0.06545
 # Sole corners in the foot body frame, from the collision mesh in
-# robonex-description/mujoco/robot/scene.xml (13716 verts, sole plane at z=-0.06540).
+# robonex-description/ver1/mujoco/robot/scene.xml (13716 verts, sole plane at z=-0.06540).
 # The body origin sits 0.151 m behind the toe and 0.062 m ahead of the heel, so a
 # toe-down pitch lifts the origin while the toe stays low: at 10 deg the origin reads
 # 60 mm of clearance while the sole is 36 mm off the ground. Checked against the full

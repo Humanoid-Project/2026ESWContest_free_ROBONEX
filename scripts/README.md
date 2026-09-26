@@ -10,7 +10,7 @@ Current source inventory (2026-09-05). This page documents accepted arguments; i
 | `--output` | `None` | Manifest destination; defaults to policy_manifest.json beside the policy.  |
 | `--description-root` | `None` | Description checkout override; otherwise resolver/environment/sibling lookup.  |
 | `--common-root` | `None` | Local common checkout used for Git provenance; still needed despite tag-pip installation.  |
-| `--description-model` | `mujoco/robot/scene.xml` | Model path relative to the description checkout.  |
+| `--description-model` | `ver1/mujoco/robot/scene.xml` | Model path relative to the description checkout.  |
 
 Schema 2 fingerprints the policy, MuJoCo model bundle, common runtime source, and training source.
 

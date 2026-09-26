@@ -43,7 +43,7 @@ RoboNex는 무릎의 4절 링크와 두 모터가 결합된 차동 발목을 포
 ```mermaid
 flowchart LR
     common["robonex-common<br/>관절·모터·정책 공통 계약"]
-    description["robonex-description<br/>URDF · MJCF · SDF · USD"]
+    description["robonex-description<br/>URDF · MJCF · USD"]
     balancing["robonex-balancing<br/>균형 강화학습"]
     walking["robonex-walking<br/>보행 강화학습"]
     deploy["robonex-deploy<br/>Sim-to-Sim · Sim-to-Real"]
@@ -84,7 +84,7 @@ flowchart LR
 | 저장소 | 역할 | 본 프로젝트와의 연결 |
 | --- | --- | --- |
 | `robonex-common` | 관절 ID·순서·제한, RS02/RS03 사양, CAN 및 정책 계약 | 보행 정책의 12개 관절 순서와 행동 정규화 공유 |
-| `robonex-description` | URDF, MJCF, SDF, USD 로봇 모델 | Isaac Lab의 폐루프 mesh USD 제공 |
+| `robonex-description` | URDF, MJCF, USD 로봇 모델 | Isaac Lab의 폐루프 mesh USD 제공 |
 | `robonex-balancing` | 정적 균형 PPO 학습 | 관측·행동 계약과 안정화 설계를 보행 과제로 확장 |
 | `robonex-walking` | 평지 전진 보행 PPO 학습 | 대회 제출 및 현재 저장소 |
 | `robonex-deploy` | Isaac–MuJoCo–실물 로봇 연결 | 정책 manifest 검증과 Sim-to-Sim/Sim-to-Real 담당 |

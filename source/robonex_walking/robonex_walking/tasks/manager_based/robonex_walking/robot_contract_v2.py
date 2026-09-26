@@ -10,7 +10,7 @@ from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 VARIANTS = ("edu", "pro", "max")
 CONSTANTS_PATH = repo_file(
     DESCRIPTION_REPO_NAMES,
-    "new_urdf/scripts/ver2_constants.json",
+    "ver2/ver2_constants.json",
     env_var="ROBONEX_DESCRIPTION_ROOT",
     anchors=(__file__,),
 )
@@ -20,7 +20,7 @@ CONSTANTS = json.loads(CONSTANTS_PATH.read_text())
 def robot_usd(variant):
     return repo_file(
         DESCRIPTION_REPO_NAMES,
-        "new_urdf/isaac/%s/closed_loop_mesh/robonex_%s_closed_loop_mesh.usd" % (variant, variant),
+        "ver2/isaac/%s/closed_loop_mesh/robonex_%s_closed_loop_mesh.usd" % (variant, variant),
         env_var="ROBONEX_DESCRIPTION_ROOT",
         anchors=(__file__,),
     )
