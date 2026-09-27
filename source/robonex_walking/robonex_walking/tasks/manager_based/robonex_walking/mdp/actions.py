@@ -100,21 +100,30 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
                 low, high = (sign * float(v) for v in self._clip[0, i])
                 bounds.append((min(low, high), max(low, high)))
             self._roll_pairs.append((iu, il, sign, bounds[0], bounds[1]))
+        self.foot_roll_clipped = torch.zeros(self.num_envs, len(self._roll_pairs), dtype=torch.bool, device=self.device)
+        self.foot_roll_slew_clipped = torch.zeros_like(self.foot_roll_clipped)
+
+    def _clip_roll(self, targets: torch.Tensor, flags: torch.Tensor) -> torch.Tensor:
+        targets = targets.clone()
+        for k, (iu, il, sign, upper_range, lower_range) in enumerate(self._roll_pairs):
+            upper, lower = clip_foot_roll(
+                sign * targets[:, iu],
+                sign * targets[:, il],
+                upper_range,
+                lower_range,
+                self.cfg.foot_roll_coeffs,
+                self.cfg.foot_roll_limit,
+            )
+            flags[:, k] = (sign * upper != targets[:, iu]) | (sign * lower != targets[:, il])
+            targets[:, iu] = sign * upper
+            targets[:, il] = sign * lower
+        return targets
 
     def process_actions(self, actions: torch.Tensor):
         JointPositionAction.process_actions(self, actions)
-        if self.cfg.foot_roll_limit > 0.0:
-            for iu, il, sign, upper_range, lower_range in self._roll_pairs:
-                upper, lower = clip_foot_roll(
-                    sign * self._processed_actions[:, iu],
-                    sign * self._processed_actions[:, il],
-                    upper_range,
-                    lower_range,
-                    self.cfg.foot_roll_coeffs,
-                    self.cfg.foot_roll_limit,
-                )
-                self._processed_actions[:, iu] = sign * upper
-                self._processed_actions[:, il] = sign * lower
+        roll_clip = self.cfg.foot_roll_limit > 0.0
+        if roll_clip:
+            self._processed_actions = self._clip_roll(self._processed_actions, self.foot_roll_clipped)
         if not self.cfg.slew_enabled:
             self._slew_position[:] = self._processed_actions
             self._slew_velocity[:] = 0.0
@@ -128,6 +137,8 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
             self.cfg.max_speed,
             self.cfg.max_accel,
         )
+        if roll_clip:
+            position = self._clip_roll(position, self.foot_roll_slew_clipped)
         self._slew_position[:] = position
         self._slew_velocity[:] = velocity
         self._processed_actions = position.clone()

@@ -138,6 +138,8 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
         self.diagnostic_target_lo = torch.zeros(self.num_actions, device=self.device)
         self.diagnostic_target_hi = torch.zeros(self.num_actions, device=self.device)
         self.diagnostic_samples = 0
+        self.diagnostic_roll_term = term if hasattr(term, "foot_roll_clipped") else None
+        self.diagnostic_roll_counts = torch.zeros(4, device=self.device)
         scene = getattr(self.unwrapped, "scene", None)
         sensors = getattr(scene, "sensors", {}) if scene is not None else {}
         self.walk_metrics = None
@@ -184,6 +186,12 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
                 self.diagnostic_target_hi += above.sum(dim=0)
             self.diagnostic_samples += actions.shape[0]
         result = super().step(actions)
+        if self.diagnostic_roll_term is not None:
+            with torch.no_grad():
+                pre = self.diagnostic_roll_term.foot_roll_clipped
+                post = self.diagnostic_roll_term.foot_roll_slew_clipped
+                self.diagnostic_roll_counts[:2] += pre.sum(dim=0)
+                self.diagnostic_roll_counts[2:] += post.sum(dim=0)
         if self.walk_metrics is not None:
             self.walk_metrics.update(self.unwrapped)
         return result
@@ -219,6 +227,13 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
             values["Policy/target_clip_element_fraction"] = sum(target_counts[:-1]) / (
                 samples * len(self.diagnostic_joint_names)
             )
+        if self.diagnostic_roll_term is not None:
+            roll = (self.diagnostic_roll_counts / samples).detach().cpu().tolist()
+            self.diagnostic_roll_counts.zero_()
+            values["Policy/foot_roll_clip_fraction/l"] = roll[0]
+            values["Policy/foot_roll_clip_fraction/r"] = roll[1]
+            values["Policy/foot_roll_slew_clip_fraction/l"] = roll[2]
+            values["Policy/foot_roll_slew_clip_fraction/r"] = roll[3]
         if self.walk_metrics is not None:
             values.update(self.walk_metrics.take_log())
         return values

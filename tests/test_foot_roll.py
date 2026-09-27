@@ -27,7 +27,9 @@ def load_contract_constants():
 
 class FootRollClipTest(unittest.TestCase):
     def setUp(self):
-        self.roll, self.clip = load_functions(TASK / "mdp/actions.py", ["foot_roll", "clip_foot_roll"], {"torch": torch})
+        self.roll, self.clip, self.slew = load_functions(
+            TASK / "mdp/actions.py", ["foot_roll", "clip_foot_roll", "slew_limit_step"], {"torch": torch}
+        )
         self.coeffs, self.limit = load_contract_constants()
         margin = 0.01
         self.upper_range = (math.radians(-16.0) + margin, math.radians(50.0) - margin)
@@ -67,6 +69,26 @@ class FootRollClipTest(unittest.TestCase):
                     if not row["ok"] and abs(row["roll"]) <= 14.0:
                         bad.append((ga, gb))
         self.assertEqual(bad, [])
+
+    def test_slew_output_projected_back_inside_the_roll_band(self):
+        generator = torch.Generator().manual_seed(0)
+        n = 20000
+        position = torch.zeros(n, 2, dtype=torch.float64)
+        position[:, 0], position[:, 1] = 0.2126, -0.2038
+        velocity = torch.zeros_like(position)
+        unprojected_outside = 0
+        for _ in range(100):
+            request = position + 0.3 * torch.randn(n, 2, generator=generator, dtype=torch.float64)
+            u = torch.clamp(request[:, 0], *self.upper_range)
+            l = torch.clamp(request[:, 1], *self.lower_range)
+            u, l = self.clipped(u, l)
+            position, velocity = self.slew(position, velocity, torch.stack([u, l], dim=1), 0.02, 6.0, 120.0)
+            unprojected_outside += int((self.roll(position[:, 0], position[:, 1], self.coeffs).abs() > self.limit + 1e-3).sum())
+            u, l = self.clipped(position[:, 0], position[:, 1])
+            position = torch.stack([u, l], dim=1)
+            roll = self.roll(position[:, 0], position[:, 1], self.coeffs)
+            self.assertLessEqual(float(roll.abs().max()), self.limit + math.radians(0.05))
+        self.assertGreater(unprojected_outside, 0)
 
 
 if __name__ == "__main__":
