@@ -17,6 +17,9 @@ from .robot_contract_v2 import (
     CLOSED_LOOP_DEFAULT_JOINT_POS,
     CONSTANTS,
     FOOT_ORIGIN_REST_HEIGHT,
+    FOOT_ROLL_COEFFS,
+    FOOT_ROLL_LIMIT_RAD,
+    FOOT_ROLL_PAIRS,
     FOOT_SOLE_CORNERS,
     STANCE_WIDTH_DEFAULT,
     robot_usd,
@@ -64,7 +67,7 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
         self.scene.contact_forces.history_length = DECIMATION
 
         action = self.actions.joint_pos
-        self.actions.joint_pos = mdp.SlewLimitedJointPositionActionCfg(
+        self.actions.joint_pos = mdp.Ver2JointPositionActionCfg(
             asset_name=action.asset_name,
             joint_names=action.joint_names,
             offset=ACTION_OFFSETS,
@@ -73,6 +76,9 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
             use_default_offset=action.use_default_offset,
             max_speed=DEPLOY_MAX_SPEED,
             max_accel=DEPLOY_MAX_ACCEL,
+            foot_roll_limit=FOOT_ROLL_LIMIT_RAD,
+            foot_roll_coeffs=FOOT_ROLL_COEFFS,
+            foot_roll_pairs=FOOT_ROLL_PAIRS,
         )
 
         self.rewards.slew_lag = RewTerm(func=mdp.slew_lag_l2, weight=SLEW_LAG_WEIGHT, params={"scale": SLEW_LAG_SCALE})

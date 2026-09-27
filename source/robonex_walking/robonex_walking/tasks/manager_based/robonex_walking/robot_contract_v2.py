@@ -33,6 +33,9 @@ STANCE_WIDTH_DEFAULT = CONSTANTS["stance_width_default"]
 HIP_PITCH_HEIGHT = CONSTANTS["hip_pitch_height_default"]
 JOINT_LIMITS = {name: tuple(v) for name, v in CONSTANTS["provisional_limits"].items()}
 DEFAULT_ACTUATED_POS = dict(CONSTANTS["default_actuated_pos"])
+FOOT_ROLL_LIMIT_RAD = math.radians(12.0)
+FOOT_ROLL_COEFFS = (-0.001195, 0.498159, 0.491024, -0.105182, -0.031960, 0.006356)
+FOOT_ROLL_PAIRS = (("l_ankle_upper_joint", "l_ankle_lower_joint", 1.0), ("r_ankle_upper_joint", "r_ankle_lower_joint", -1.0))
 
 LEG_JOINTS = tuple(joint.model_name for joint in ACTUATED_JOINTS)
 _RATED_SPINNING = {"rs02": 7.0, "rs03": 20.0}
@@ -86,6 +89,9 @@ __all__ = [
     "CLOSED_LOOP_DEFAULT_JOINT_POS",
     "CONSTANTS",
     "FOOT_ORIGIN_REST_HEIGHT",
+    "FOOT_ROLL_COEFFS",
+    "FOOT_ROLL_LIMIT_RAD",
+    "FOOT_ROLL_PAIRS",
     "FOOT_SOLE_CORNERS",
     "HIP_PITCH_HEIGHT",
     "JOINT_LIMITS",
