@@ -63,3 +63,22 @@ class SlewLimitStepTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SlewLagRewardTest(unittest.TestCase):
+    def test_lag_penalty_is_zero_without_lag_and_saturates(self):
+        rewards = ROOT / "source/robonex_walking/robonex_walking/tasks/manager_based/robonex_walking/mdp/rewards.py"
+        ns = {"torch": torch, "ManagerBasedRLEnv": object}
+        tree = ast.parse(rewards.read_text())
+        nodes = [n for n in tree.body if getattr(n, "name", None) in ("_bounded_square", "_saturate", "slew_lag_l2")]
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), "rewards", "exec"), ns)
+        term = type("T", (), {})()
+        term.slew_lag = torch.tensor([[0.0, 0.0], [0.05, 0.0], [1.0, 1.0]])
+        env = type("E", (), {})()
+        env.num_envs = 3
+        env.device = "cpu"
+        env.action_manager = type("M", (), {"get_term": staticmethod(lambda name: term)})()
+        out = ns["slew_lag_l2"](env, scale=0.0025)
+        self.assertEqual(out[0].item(), 0.0)
+        self.assertAlmostEqual(out[1].item(), 1 - math.exp(-1.0), places=5)
+        self.assertGreater(out[2].item(), 0.999)

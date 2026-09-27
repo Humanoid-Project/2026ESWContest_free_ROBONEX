@@ -35,9 +35,11 @@ class SlewLimitedJointPositionAction(JointPositionAction):
         self._slew_dt = env.step_dt
         self._slew_position = self._asset.data.default_joint_pos[:, self._joint_ids].clone()
         self._slew_velocity = torch.zeros_like(self._slew_position)
+        self.slew_lag = torch.zeros_like(self._slew_position)
 
     def process_actions(self, actions: torch.Tensor):
         super().process_actions(actions)
+        requested = self._processed_actions.clone()
         position, velocity = slew_limit_step(
             self._slew_position,
             self._slew_velocity,
@@ -49,12 +51,14 @@ class SlewLimitedJointPositionAction(JointPositionAction):
         self._slew_position[:] = position
         self._slew_velocity[:] = velocity
         self._processed_actions = position.clone()
+        self.slew_lag = requested - position
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         super().reset(env_ids)
         ids = slice(None) if env_ids is None else env_ids
         self._slew_position[ids] = self._asset.data.default_joint_pos[ids][:, self._joint_ids]
         self._slew_velocity[ids] = 0.0
+        self.slew_lag[ids] = 0.0
 
 
 @configclass

@@ -1,3 +1,4 @@
+from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.utils import configclass
 
 from . import mdp
@@ -38,6 +39,8 @@ DECIMATION = 8
 POSITION_ITERATIONS = 32
 DEPLOY_MAX_SPEED = 6.0
 DEPLOY_MAX_ACCEL = 120.0
+SLEW_LAG_WEIGHT = -1.0
+SLEW_LAG_SCALE = 0.0025
 
 
 @configclass
@@ -71,6 +74,8 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
             max_speed=DEPLOY_MAX_SPEED,
             max_accel=DEPLOY_MAX_ACCEL,
         )
+
+        self.rewards.slew_lag = RewTerm(func=mdp.slew_lag_l2, weight=SLEW_LAG_WEIGHT, params={"scale": SLEW_LAG_SCALE})
 
         self.rewards.base_height.params["target_height"] = BASE_HEIGHT
         self.rewards.feet_width.params["target_width"] = STANCE_WIDTH_DEFAULT

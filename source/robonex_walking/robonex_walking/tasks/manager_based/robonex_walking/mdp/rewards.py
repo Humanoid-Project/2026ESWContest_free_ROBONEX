@@ -750,3 +750,10 @@ def invalid_state(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntit
     invalid |= (torch.linalg.vector_norm(data.root_quat_w, dim=-1) - 1.0).abs() > 0.1
     invalid |= (torch.linalg.vector_norm(data.projected_gravity_b, dim=-1) - 1.0).abs() > 0.1
     return invalid
+
+
+def slew_lag_l2(env: ManagerBasedRLEnv, scale: float = 0.0025, term_name: str = "joint_pos") -> torch.Tensor:
+    lag = getattr(env.action_manager.get_term(term_name), "slew_lag", None)
+    if lag is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    return _saturate(torch.sum(_bounded_square(lag, 2.0), dim=1), scale)
