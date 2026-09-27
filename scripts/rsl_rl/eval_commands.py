@@ -24,6 +24,14 @@ parser.add_argument("--slew_limit", action="store_true",
                     help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
 parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
+parser.add_argument("--deploy_overspeed", type=float, default=10.0,
+                    help="Deploy stop: actuated joint speed above this (rad/s)")
+parser.add_argument("--deploy_max_error_deg", type=float, default=25.0,
+                    help="Deploy stop: |target - position| above this (deg)")
+parser.add_argument("--deploy_max_tilt_deg", type=float, default=40.0,
+                    help="Deploy stop: trunk tilt from vertical above this (deg)")
+parser.add_argument("--deploy_limit_margin", type=float, default=0.05,
+                    help="Deploy stop: joint position within this of its hard limit (rad)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -340,6 +348,14 @@ def main():
         act_offset = act_offset.reshape(1, -1)
     clip_low = action_term._clip[..., 0]
     clip_high = action_term._clip[..., 1]
+    robot = unwrapped.scene["robot"]
+    joint_ids = action_term._joint_ids
+    hard_limits = robot.data.joint_pos_limits[:, joint_ids]
+    safe_low = hard_limits[..., 0] + args_cli.deploy_limit_margin
+    safe_high = hard_limits[..., 1] - args_cli.deploy_limit_margin
+    max_error_rad = args_cli.deploy_max_error_deg * torch.pi / 180.0
+    max_tilt_rad = args_cli.deploy_max_tilt_deg * torch.pi / 180.0
+    envelope_names = ("overspeed", "tracking_error", "tilt", "joint_range")
 
     # The env is rebuilt from the CURRENT code, not from the run that produced the
     # checkpoint. Record what was actually applied and compare against the run's own
@@ -430,6 +446,11 @@ def main():
         worst_excess = torch.zeros(n_joints, device=unwrapped.device)
         min_margin = torch.full((n_joints,), float("inf"), device=unwrapped.device)
         counted = torch.zeros((), device=unwrapped.device)
+        ever_envelope = torch.zeros(unwrapped.num_envs, dtype=torch.bool, device=unwrapped.device)
+        ever_by_cond = {c: torch.zeros(unwrapped.num_envs, dtype=torch.bool, device=unwrapped.device) for c in envelope_names}
+        peak_speed = torch.zeros((), device=unwrapped.device)
+        peak_error = torch.zeros((), device=unwrapped.device)
+        peak_tilt = torch.zeros((), device=unwrapped.device)
         target = torch.tensor(command, device=unwrapped.device)
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
             actions = policy(obs)
@@ -475,6 +496,24 @@ def main():
                 torch.full_like(first_fail_step, float(step - args_cli.warmup_steps)),
                 first_fail_step,
             )
+            alive = ~step_failed
+            q = robot.data.joint_pos[:, joint_ids]
+            speed = robot.data.joint_vel[:, joint_ids].abs().amax(dim=1)
+            error = (robot.data.joint_pos_target[:, joint_ids] - q).abs().amax(dim=1)
+            gravity = robot.data.projected_gravity_b
+            tilt = torch.acos(torch.clamp(-gravity[:, 2] / gravity.norm(dim=1).clamp(min=1e-6), -1.0, 1.0))
+            conditions = {
+                "overspeed": speed > args_cli.deploy_overspeed,
+                "tracking_error": error > max_error_rad,
+                "tilt": tilt > max_tilt_rad,
+                "joint_range": ((q < safe_low) | (q > safe_high)).any(dim=1),
+            }
+            for c, hit in conditions.items():
+                ever_by_cond[c] |= hit & alive
+                ever_envelope |= hit & alive
+            peak_speed = torch.maximum(peak_speed, torch.where(alive, speed, torch.zeros_like(speed)).amax())
+            peak_error = torch.maximum(peak_error, torch.where(alive, error, torch.zeros_like(error)).amax())
+            peak_tilt = torch.maximum(peak_tilt, torch.where(alive, tilt, torch.zeros_like(tilt)).amax())
             ever_failed |= step_failed
             counted += 1.0
 
@@ -496,6 +535,14 @@ def main():
         )
         row["termination_counts"] = {
             name: value.item() for name, value in fail_counts.items()
+        }
+        row["deploy_envelope_fraction"] = ever_envelope.float().mean().item()
+        row["deploy_stop_fraction"] = (ever_envelope | ever_failed).float().mean().item()
+        row["deploy_envelope_by_condition"] = {c: v.float().mean().item() for c, v in ever_by_cond.items()}
+        row["deploy_peak"] = {
+            "joint_speed_rad_s": peak_speed.item(),
+            "tracking_error_deg": peak_error.item() * 180.0 / torch.pi,
+            "tilt_deg": peak_tilt.item() * 180.0 / torch.pi,
         }
         frac = (clip_hits / counted)
         row["clip_frac"] = {n: frac[i].item() for i, n in enumerate(joint_names)}
