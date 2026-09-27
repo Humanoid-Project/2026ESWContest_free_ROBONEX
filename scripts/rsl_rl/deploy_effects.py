@@ -94,6 +94,12 @@ def install_slew_limiter(unwrapped, max_speed=DEPLOY_MAX_SPEED, max_accel=DEPLOY
     term = unwrapped.action_manager.get_term("joint_pos")
     if hasattr(term, "_slew_position") and getattr(term.cfg, "slew_enabled", True):
         raise ValueError("the action term already applies the deploy slew limiter; do not add a second one")
+    if hasattr(term, "_slew_position"):
+        if term.cfg.max_speed != max_speed or term.cfg.max_accel != max_accel:
+            raise ValueError("the action term's slew stage has different limits from the deploy limiter")
+        term.cfg.slew_enabled = True
+        term.reset()
+        return {"position": term._slew_position, "velocity": term._slew_velocity}
     asset = unwrapped.scene["robot"]
     dt = float(unwrapped.step_dt)
     state = {

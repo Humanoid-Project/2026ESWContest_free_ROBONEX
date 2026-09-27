@@ -100,6 +100,8 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
                 low, high = (sign * float(v) for v in self._clip[0, i])
                 bounds.append((min(low, high), max(low, high)))
             self._roll_pairs.append((iu, il, sign, bounds[0], bounds[1]))
+        if cfg.foot_roll_limit > 0.0 and self._roll_pairs and not any(cfg.foot_roll_coeffs[1:3]):
+            raise ValueError("foot_roll_limit is set but foot_roll_coeffs has no linear terms")
         self.foot_roll_clipped = torch.zeros(self.num_envs, len(self._roll_pairs), dtype=torch.bool, device=self.device)
         self.foot_roll_slew_clipped = torch.zeros_like(self.foot_roll_clipped)
 
@@ -127,8 +129,11 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         if not self.cfg.slew_enabled:
             self._slew_position[:] = self._processed_actions
             self._slew_velocity[:] = 0.0
+            self.slew_lag.zero_()
+            self.foot_roll_slew_clipped.zero_()
             return
         requested = self._processed_actions.clone()
+        previous = self._slew_position.clone()
         position, velocity = slew_limit_step(
             self._slew_position,
             self._slew_velocity,
@@ -139,6 +144,7 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         )
         if roll_clip:
             position = self._clip_roll(position, self.foot_roll_slew_clipped)
+            velocity = (position - previous) / self._slew_dt
         self._slew_position[:] = position
         self._slew_velocity[:] = velocity
         self._processed_actions = position.clone()
