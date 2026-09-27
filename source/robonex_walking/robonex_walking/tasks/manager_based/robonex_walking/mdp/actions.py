@@ -103,6 +103,7 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         if cfg.foot_roll_limit > 0.0 and self._roll_pairs and not any(cfg.foot_roll_coeffs[1:3]):
             raise ValueError("foot_roll_limit is set but foot_roll_coeffs has no linear terms")
         self.foot_roll_clipped = torch.zeros(self.num_envs, len(self._roll_pairs), dtype=torch.bool, device=self.device)
+        self.foot_roll_excess = torch.zeros(self.num_envs, device=self.device)
         self.foot_roll_slew_clipped = torch.zeros_like(self.foot_roll_clipped)
 
     def _clip_roll(self, targets: torch.Tensor, flags: torch.Tensor) -> torch.Tensor:
@@ -125,7 +126,9 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         JointPositionAction.process_actions(self, actions)
         roll_clip = self.cfg.foot_roll_limit > 0.0
         if roll_clip:
-            self._processed_actions = self._clip_roll(self._processed_actions, self.foot_roll_clipped)
+            requested = self._processed_actions
+            self._processed_actions = self._clip_roll(requested, self.foot_roll_clipped)
+            self.foot_roll_excess = torch.sum(torch.square(requested - self._processed_actions), dim=1)
         if not self.cfg.slew_enabled:
             self._slew_position[:] = self._processed_actions
             self._slew_velocity[:] = 0.0

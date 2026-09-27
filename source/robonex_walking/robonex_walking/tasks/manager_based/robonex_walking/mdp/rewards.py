@@ -518,6 +518,13 @@ def target_clip_excess_l2(env: ManagerBasedRLEnv, max_excess: float = 2.0, scale
     return _saturate(torch.sum(torch.square(excess), dim=1), scale)
 
 
+def foot_roll_clip_excess_l2(env: ManagerBasedRLEnv, scale: float = 0.01, term_name: str = "joint_pos") -> torch.Tensor:
+    excess = getattr(env.action_manager.get_term(term_name), "foot_roll_excess", None)
+    if excess is None:
+        return torch.zeros(env.num_envs, device=env.device)
+    return _saturate(torch.nan_to_num(excess, nan=scale, posinf=scale, neginf=0.0), scale)
+
+
 def both_feet_off_ground(
     env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold: float = 1.0
 ) -> torch.Tensor:

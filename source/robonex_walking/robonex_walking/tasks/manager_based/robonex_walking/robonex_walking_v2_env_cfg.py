@@ -44,6 +44,8 @@ DEPLOY_MAX_SPEED = 6.0
 DEPLOY_MAX_ACCEL = 120.0
 SLEW_LAG_WEIGHT = -1.0
 SLEW_LAG_SCALE = 0.0025
+FOOT_ROLL_EXCESS_WEIGHT = -1.0
+FOOT_ROLL_EXCESS_SCALE = 0.01
 
 
 @configclass
@@ -82,6 +84,9 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
         )
 
         self.rewards.slew_lag = RewTerm(func=mdp.slew_lag_l2, weight=SLEW_LAG_WEIGHT, params={"scale": SLEW_LAG_SCALE})
+        self.rewards.foot_roll_clip_excess = RewTerm(
+            func=mdp.foot_roll_clip_excess_l2, weight=FOOT_ROLL_EXCESS_WEIGHT, params={"scale": FOOT_ROLL_EXCESS_SCALE}
+        )
 
         self.rewards.base_height.params["target_height"] = BASE_HEIGHT
         self.rewards.feet_width.params["target_width"] = STANCE_WIDTH_DEFAULT
