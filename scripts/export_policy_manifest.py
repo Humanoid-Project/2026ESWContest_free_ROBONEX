@@ -4,6 +4,7 @@ from pathlib import Path
 
 from robonex_common.joints import POLICY_JOINT_ORDER
 from robonex_common.limits import RUNNER_ACTION_CLIP, action_normalization
+from robonex_common.models import robot_model
 from robonex_common.runtime import (
     OBSERVATION_HISTORY_LENGTH,
     ACTION_SIZE,
@@ -116,6 +117,23 @@ def saved_action_normalization(saved_env):
             {n: tuple(float(v) for v in action["clip"][n]) for n in POLICY_JOINT_ORDER})
 
 
+def check_saved_foot_roll(saved_env, roll):
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    Loader.add_constructor("tag:yaml.org,2002:python/tuple", lambda loader, node: tuple(loader.construct_sequence(node)))
+    Loader.add_multi_constructor("", lambda loader, suffix, node: None)
+    action = yaml.load(saved_env.read_text(), Loader=Loader)["actions"]["joint_pos"]
+    saved = (float(action.get("foot_roll_limit", 0.0)),
+             tuple(float(v) for v in action.get("foot_roll_coeffs", ())),
+             tuple((str(p[0]), str(p[1]), float(p[2])) for p in action.get("foot_roll_pairs", ())))
+    wanted = (roll.limit, tuple(roll.coeffs), tuple(tuple(p) for p in roll.pairs))
+    if saved != wanted:
+        raise SystemExit(f"{saved_env}: foot-roll clip {saved} differs from robonex-common {wanted}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("policy", type=Path)
@@ -137,7 +155,12 @@ def main():
              "instead of robonex-common (needed for the Ver.2 tasks, whose limits and default pose differ)",
     )
     parser.add_argument("--task", default=TASK)
+    parser.add_argument("--robot-model", default="ver1", choices=("ver1", "ver2_edu"),
+                        help="Robot profile in robonex-common the policy was trained for; ver2_edu writes schema 3 "
+                             "with the coupled foot-roll clip")
     args = parser.parse_args()
+    if args.robot_model != "ver1" and args.description_model == "ver1/mujoco/robot/scene.xml":
+        args.description_model = "ver2/mujoco/robot/edu/scene_fixed.xml"
 
     policy = args.policy.expanduser().resolve()
     if not policy.is_file():
@@ -171,15 +194,24 @@ def main():
             print("WARNING: could not read sim.dt/decimation from the checkpoint's params/env.yaml; "
                   f"falling back to {DEFAULT_POLICY_HZ} Hz")
 
-    offsets, scales, clips = action_normalization(0.01)
+    offsets, scales, clips = action_normalization(0.01, model=args.robot_model)
     if args.actions_from_checkpoint:
         if args.checkpoint is None:
             raise SystemExit("--actions-from-checkpoint needs --checkpoint")
         offsets, scales, clips = saved_action_normalization(
             args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml")
 
+    roll = robot_model(args.robot_model).foot_roll
+    if args.actions_from_checkpoint and roll is not None:
+        check_saved_foot_roll(args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml", roll)
+    roll_fields = {} if args.robot_model == "ver1" else dict(
+        robot_model=args.robot_model,
+        foot_roll_limit=roll.limit,
+        foot_roll_coeffs=tuple(roll.coeffs),
+        foot_roll_pairs=tuple(tuple(pair) for pair in roll.pairs),
+    )
     contract = PolicyContract(
-        schema_version=2,
+        schema_version=2 if args.robot_model == "ver1" else 3,
         task=args.task,
         policy_file=os.path.relpath(policy, output.parent),
         policy_sha256=sha256_file(policy),
@@ -201,7 +233,9 @@ def main():
         description_commit=git_commit(description_root),
         common_commit=git_commit(common_root),
         training_commit=git_commit(training_root),
+        **roll_fields,
     )
+    contract.validate()
     contract.save(output)
     write_receipt(output, policy, args.checkpoint, training_root, contract)
     print(output)
