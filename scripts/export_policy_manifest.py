@@ -67,6 +67,7 @@ def write_receipt(manifest_path, policy, checkpoint, training_root, contract):
         "policy_sha256": contract.policy_sha256,
         "training_commit": contract.training_commit,
         "training_source_sha256": contract.training_sha256,
+        "robot_model": contract.robot_model,
     }
     if checkpoint is None:
         receipt["checkpoint"] = None
@@ -87,6 +88,7 @@ def write_receipt(manifest_path, policy, checkpoint, training_root, contract):
         receipt["saved_env_yaml_sha256"] = (
             sha256_file(saved_env) if saved_env.is_file() else None
         )
+        receipt["training_action_stage"] = saved_slew(saved_env) if saved_env.is_file() else None
         receipt["provenance"] = (
             "checkpoint recorded; the manifest's geometry is still read from the current "
             "checkout and is not verified against the saved config"
@@ -117,7 +119,7 @@ def saved_action_normalization(saved_env):
             {n: tuple(float(v) for v in action["clip"][n]) for n in POLICY_JOINT_ORDER})
 
 
-def check_saved_foot_roll(saved_env, roll):
+def saved_action_block(saved_env):
     import yaml
 
     class Loader(yaml.SafeLoader):
@@ -125,13 +127,52 @@ def check_saved_foot_roll(saved_env, roll):
 
     Loader.add_constructor("tag:yaml.org,2002:python/tuple", lambda loader, node: tuple(loader.construct_sequence(node)))
     Loader.add_multi_constructor("", lambda loader, suffix, node: None)
-    action = yaml.load(saved_env.read_text(), Loader=Loader)["actions"]["joint_pos"]
-    saved = (float(action.get("foot_roll_limit", 0.0)),
-             tuple(float(v) for v in action.get("foot_roll_coeffs", ())),
-             tuple((str(p[0]), str(p[1]), float(p[2])) for p in action.get("foot_roll_pairs", ())))
-    wanted = (roll.limit, tuple(roll.coeffs), tuple(tuple(p) for p in roll.pairs))
-    if saved != wanted:
-        raise SystemExit(f"{saved_env}: foot-roll clip {saved} differs from robonex-common {wanted}")
+    return yaml.load(saved_env.read_text(), Loader=Loader)["actions"]["joint_pos"]
+
+
+def saved_roll(action):
+    limit = float(action.get("foot_roll_limit") or 0.0)
+    if limit <= 0.0:
+        return (0.0, (), ())
+    return (limit,
+            tuple(float(v) for v in action.get("foot_roll_coeffs", ())),
+            tuple((str(p[0]), str(p[1]), float(p[2])) for p in action.get("foot_roll_pairs", ())))
+
+
+def infer_robot_model(saved_env, offsets, scales, clips, tolerance=1.0e-9):
+    from robonex_common.models import ROBOT_MODELS
+
+    roll = saved_roll(saved_action_block(saved_env))
+    matches = []
+    for name, profile in ROBOT_MODELS.items():
+        want_offsets, want_scales, want_clips = action_normalization(0.01, model=name)
+        same_actions = all(
+            abs(offsets[j] - want_offsets[j]) <= tolerance
+            and abs(scales[j] - want_scales[j]) <= tolerance
+            and all(abs(a - b) <= tolerance for a, b in zip(clips[j], want_clips[j]))
+            for j in POLICY_JOINT_ORDER
+        )
+        want_roll = (0.0, (), ()) if profile.foot_roll is None else (
+            profile.foot_roll.limit, tuple(profile.foot_roll.coeffs), tuple(tuple(p) for p in profile.foot_roll.pairs))
+        if same_actions and roll == want_roll:
+            matches.append(name)
+    if len(matches) != 1:
+        raise SystemExit(
+            f"{saved_env}: the saved action normalisation and foot-roll clip match {len(matches)} robonex-common robot "
+            f"models ({', '.join(sorted(ROBOT_MODELS))}); exactly one must match. This checkpoint cannot be deployed "
+            "under the current contract."
+        )
+    return matches[0]
+
+
+def saved_slew(saved_env):
+    action = saved_action_block(saved_env)
+    return {
+        "slew_enabled": action.get("slew_enabled"),
+        "max_speed": action.get("max_speed"),
+        "max_accel": action.get("max_accel"),
+        "class_type": action.get("class_type"),
+    }
 
 
 def main():
@@ -155,12 +196,10 @@ def main():
              "instead of robonex-common (needed for the Ver.2 tasks, whose limits and default pose differ)",
     )
     parser.add_argument("--task", default=TASK)
-    parser.add_argument("--robot-model", default="ver1", choices=("ver1", "ver2_edu"),
-                        help="Robot profile in robonex-common the policy was trained for; ver2_edu writes schema 3 "
-                             "with the coupled foot-roll clip")
+    parser.add_argument("--robot-model", default=None, choices=("ver1", "ver2_edu"),
+                        help="Robot profile in robonex-common. With --checkpoint it is inferred from the saved "
+                             "params/env.yaml and this must agree; without a checkpoint only ver1 is allowed")
     args = parser.parse_args()
-    if args.robot_model != "ver1" and args.description_model == "ver1/mujoco/robot/scene.xml":
-        args.description_model = "ver2/mujoco/robot/edu/scene_fixed.xml"
 
     policy = args.policy.expanduser().resolve()
     if not policy.is_file():
@@ -194,16 +233,27 @@ def main():
             print("WARNING: could not read sim.dt/decimation from the checkpoint's params/env.yaml; "
                   f"falling back to {DEFAULT_POLICY_HZ} Hz")
 
-    offsets, scales, clips = action_normalization(0.01, model=args.robot_model)
-    if args.actions_from_checkpoint:
-        if args.checkpoint is None:
+    if args.checkpoint is None:
+        if args.actions_from_checkpoint:
             raise SystemExit("--actions-from-checkpoint needs --checkpoint")
-        offsets, scales, clips = saved_action_normalization(
-            args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml")
+        if args.robot_model not in (None, "ver1"):
+            raise SystemExit(f"--robot-model {args.robot_model} needs --checkpoint so the export can be checked against it")
+        args.robot_model = "ver1"
+        offsets, scales, clips = action_normalization(0.01, model=args.robot_model)
+    else:
+        saved_env = args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml"
+        if not saved_env.is_file():
+            raise SystemExit(f"{saved_env} is missing; the export cannot be checked against the run")
+        offsets, scales, clips = saved_action_normalization(saved_env)
+        inferred = infer_robot_model(saved_env, offsets, scales, clips)
+        if args.robot_model is not None and args.robot_model != inferred:
+            raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
+        args.robot_model = inferred
+        print(f"robot model: {inferred} (inferred from {saved_env})")
+    if args.robot_model != "ver1" and args.description_model == "ver1/mujoco/robot/scene.xml":
+        args.description_model = "ver2/mujoco/robot/edu/scene_fixed.xml"
 
     roll = robot_model(args.robot_model).foot_roll
-    if args.actions_from_checkpoint and roll is not None:
-        check_saved_foot_roll(args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml", roll)
     roll_fields = {} if args.robot_model == "ver1" else dict(
         robot_model=args.robot_model,
         foot_roll_limit=roll.limit,
