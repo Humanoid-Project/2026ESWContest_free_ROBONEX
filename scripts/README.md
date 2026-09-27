@@ -11,12 +11,12 @@ Current source inventory (2026-09-05). This page documents accepted arguments; i
 | `--description-root` | `None` | Description checkout override; otherwise resolver/environment/sibling lookup.  |
 | `--common-root` | `None` | Local common checkout used for Git provenance; still needed despite tag-pip installation.  |
 | `--description-model` | `Auto-detected` | Model path relative to the description checkout; defaults to the robot model's scene (`ver2_edu`: `ver2/mujoco/robot/edu/scene_fixed.xml`).  |
-| `--checkpoint` | `None` | The `.pt` the ONNX came from. Its `params/env.yaml` supplies the action normalisation and decides the robot model; required for Ver.2.  |
-| `--robot-model` | `None` | `ver1` or `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree. Without a checkpoint it must be given, and only `ver1` is allowed.  |
+| `--checkpoint` | `Required` | The `.pt` the ONNX came from. Its `params/env.yaml` supplies the action normalisation and decides the robot model.  |
+| `--robot-model` | `None` | `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree.  |
 | `--actions-from-checkpoint` | `False` | Kept for older commands; the saved actions are always used when `--checkpoint` is given.  |
 | `--task` | `Auto-detected` | Task id recorded in the manifest; defaults to the robot model's training task (`ver2_edu`: `RoboNex-Walking-V2-Edu-v0`).  |
 
-Schema 2 (Ver.1) and schema 3 (Ver.2: adds `robot_model` and the coupled foot-roll clip) fingerprint the policy, MuJoCo model bundle, common runtime source, and training source; the contract is validated before it is saved, and `export_receipt.json` records the training slew stage.
+Schema 3 (`robot_model` and the coupled foot-roll clip) fingerprints the policy, MuJoCo model bundle, common runtime source, and training source; the contract is validated before it is saved, and `export_receipt.json` records the training slew stage.
 
 ## `list_envs.py`
 

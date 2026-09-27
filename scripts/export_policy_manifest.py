@@ -19,8 +19,8 @@ from robonex_common.policy import (
     sha256_file,
 )
 
-TASKS = {"ver1": "RoboNex-Walking-v0", "ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
-DESCRIPTION_MODELS = {"ver1": "ver1/mujoco/robot/scene.xml", "ver2_edu": "ver2/mujoco/robot/edu/scene_fixed.xml"}
+TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
+DESCRIPTION_MODELS = {"ver2_edu": "ver2/mujoco/robot/edu/scene_fixed.xml"}
 
 RECEIPT_VERSION = 1
 
@@ -186,6 +186,7 @@ def main():
     parser.add_argument(
         "--checkpoint",
         type=Path,
+        required=True,
         help="The .pt this ONNX was exported from. Recorded in the sidecar receipt so the "
              "manifest can be traced back to a training artifact; without it the receipt "
              "says so explicitly",
@@ -197,9 +198,9 @@ def main():
              "instead of robonex-common (needed for the Ver.2 tasks, whose limits and default pose differ)",
     )
     parser.add_argument("--task", default=None, help="Default: the robot model's training task")
-    parser.add_argument("--robot-model", default=None, choices=("ver1", "ver2_edu"),
-                        help="Robot profile in robonex-common. With --checkpoint it is inferred from the saved "
-                             "params/env.yaml and this must agree; without a checkpoint only ver1 is allowed")
+    parser.add_argument("--robot-model", default=None, choices=tuple(sorted(TASKS)),
+                        help="Robot profile in robonex-common. It is inferred from the checkpoint's saved "
+                             "params/env.yaml and this must agree")
     args = parser.parse_args()
 
     policy = args.policy.expanduser().resolve()
@@ -234,37 +235,27 @@ def main():
             print("WARNING: could not read sim.dt/decimation from the checkpoint's params/env.yaml; "
                   f"falling back to {DEFAULT_POLICY_HZ} Hz")
 
-    if args.checkpoint is None:
-        if args.actions_from_checkpoint:
-            raise SystemExit("--actions-from-checkpoint needs --checkpoint")
-        if args.robot_model is None:
-            raise SystemExit("without --checkpoint the robot model cannot be checked; pass --checkpoint, or "
-                             "--robot-model ver1 to export a Ver.1 policy on trust")
-        if args.robot_model != "ver1":
-            raise SystemExit(f"--robot-model {args.robot_model} needs --checkpoint so the export can be checked against it")
-        offsets, scales, clips = action_normalization(0.01, model=args.robot_model)
-    else:
-        saved_env = args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml"
-        if not saved_env.is_file():
-            raise SystemExit(f"{saved_env} is missing; the export cannot be checked against the run")
-        offsets, scales, clips = saved_action_normalization(saved_env)
-        inferred = infer_robot_model(saved_env, offsets, scales, clips)
-        if args.robot_model is not None and args.robot_model != inferred:
-            raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
-        args.robot_model = inferred
-        print(f"robot model: {inferred} (inferred from {saved_env})")
+    saved_env = args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml"
+    if not saved_env.is_file():
+        raise SystemExit(f"{saved_env} is missing; the export cannot be checked against the run")
+    offsets, scales, clips = saved_action_normalization(saved_env)
+    inferred = infer_robot_model(saved_env, offsets, scales, clips)
+    if args.robot_model is not None and args.robot_model != inferred:
+        raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
+    args.robot_model = inferred
+    print(f"robot model: {inferred} (inferred from {saved_env})")
     args.description_model = args.description_model or DESCRIPTION_MODELS[args.robot_model]
     args.task = args.task or TASKS[args.robot_model]
 
     roll = robot_model(args.robot_model).foot_roll
-    roll_fields = {} if args.robot_model == "ver1" else dict(
+    roll_fields = dict(
         robot_model=args.robot_model,
         foot_roll_limit=roll.limit,
         foot_roll_coeffs=tuple(roll.coeffs),
         foot_roll_pairs=tuple(tuple(pair) for pair in roll.pairs),
     )
     contract = PolicyContract(
-        schema_version=2 if args.robot_model == "ver1" else 3,
+        schema_version=3,
         task=args.task,
         policy_file=os.path.relpath(policy, output.parent),
         policy_sha256=sha256_file(policy),
