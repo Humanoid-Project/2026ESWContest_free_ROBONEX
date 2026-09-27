@@ -90,8 +90,8 @@ def write_receipt(manifest_path, policy, checkpoint, training_root, contract):
         )
         receipt["training_action_stage"] = saved_slew(saved_env) if saved_env.is_file() else None
         receipt["provenance"] = (
-            "checkpoint recorded; the manifest's geometry is still read from the current "
-            "checkout and is not verified against the saved config"
+            "checkpoint recorded; the manifest's action normalisation and foot-roll clip were read "
+            "from its saved params/env.yaml and matched to exactly one robonex-common robot model"
             if saved_env.is_file()
             else "checkpoint recorded, but the run saved no params/env.yaml to compare against"
         )
@@ -236,9 +236,11 @@ def main():
     if args.checkpoint is None:
         if args.actions_from_checkpoint:
             raise SystemExit("--actions-from-checkpoint needs --checkpoint")
-        if args.robot_model not in (None, "ver1"):
+        if args.robot_model is None:
+            raise SystemExit("without --checkpoint the robot model cannot be checked; pass --checkpoint, or "
+                             "--robot-model ver1 to export a Ver.1 policy on trust")
+        if args.robot_model != "ver1":
             raise SystemExit(f"--robot-model {args.robot_model} needs --checkpoint so the export can be checked against it")
-        args.robot_model = "ver1"
         offsets, scales, clips = action_normalization(0.01, model=args.robot_model)
     else:
         saved_env = args.checkpoint.expanduser().resolve().parent / "params" / "env.yaml"

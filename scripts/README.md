@@ -12,7 +12,7 @@ Current source inventory (2026-09-05). This page documents accepted arguments; i
 | `--common-root` | `None` | Local common checkout used for Git provenance; still needed despite tag-pip installation.  |
 | `--description-model` | `ver1/mujoco/robot/scene.xml` | Model path relative to the description checkout; becomes `ver2/mujoco/robot/edu/scene_fixed.xml` for `ver2_edu` when left at the default.  |
 | `--checkpoint` | `None` | The `.pt` the ONNX came from. Its `params/env.yaml` supplies the action normalisation and decides the robot model; required for Ver.2.  |
-| `--robot-model` | `None` | `ver1` or `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree. Without a checkpoint only `ver1` is allowed.  |
+| `--robot-model` | `None` | `ver1` or `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree. Without a checkpoint it must be given, and only `ver1` is allowed.  |
 | `--actions-from-checkpoint` | `False` | Kept for older commands; the saved actions are always used when `--checkpoint` is given.  |
 | `--task` | `RoboNex-Walking-v0` | Task id recorded in the manifest.  |
 
