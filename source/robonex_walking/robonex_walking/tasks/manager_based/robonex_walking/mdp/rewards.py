@@ -400,6 +400,22 @@ def foot_slip_l2(
     return _saturate(torch.sum(torch.sum(_bounded_square(foot_vel_xy, 2.0), dim=-1) * contacts, dim=1), scale)
 
 
+def foot_slip_latest_l2(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    threshold: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    scale: float = 0.08,
+) -> torch.Tensor:
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    forces = contact_sensor.data.net_forces_w_history[:, 0, sensor_cfg.body_ids, :]
+    forces = torch.nan_to_num(forces, nan=threshold + 1.0, posinf=threshold + 1.0, neginf=-(threshold + 1.0))
+    contacts = torch.norm(forces, dim=-1) > threshold
+    asset: Articulation = env.scene[asset_cfg.name]
+    foot_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
+    return _saturate(torch.sum(torch.sum(_bounded_square(foot_vel_xy, 2.0), dim=-1) * contacts, dim=1), scale)
+
+
 class _GaitTracker:
     def __init__(self, env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg):
         self.sensor_cfg = sensor_cfg

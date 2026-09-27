@@ -67,6 +67,7 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
         self.decimation = DECIMATION
         self.sim.render_interval = DECIMATION
         self.scene.contact_forces.history_length = DECIMATION
+        self.scene.illegal_contacts.history_length = DECIMATION
 
         action = self.actions.joint_pos
         self.actions.joint_pos = mdp.Ver2JointPositionActionCfg(
@@ -93,6 +94,7 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
         self.rewards.feet_width.params["standing_width"] = round(STANCE_WIDTH_DEFAULT + STANDING_WIDENING, 4)
         self.rewards.feet_clearance.params["target_height"] = FOOT_CLEARANCE_V2
         self.rewards.feet_clearance.params["sole_corners"] = FOOT_SOLE_CORNERS
+        self.rewards.foot_slip.func = mdp.foot_slip_latest_l2
         self.rewards.feet_contact_force.func = mdp.feet_contact_force_mean_l2
         self.rewards.feet_contact_force.params["threshold"] = round(
             CONTACT_FORCE_PER_WEIGHT * CONSTANTS["variant_mass_kg"][self.variant] * GRAVITY, 1)

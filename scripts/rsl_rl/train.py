@@ -186,6 +186,9 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
                 self.diagnostic_target_hi += above.sum(dim=0)
             self.diagnostic_samples += actions.shape[0]
         result = super().step(actions)
+        extras = result[3] if isinstance(result, tuple) and len(result) == 4 else None
+        if isinstance(extras, dict) and "time_outs" in extras:
+            extras["time_outs"] = extras["time_outs"] & ~self.unwrapped.termination_manager.terminated
         if self.diagnostic_roll_term is not None:
             with torch.no_grad():
                 pre = self.diagnostic_roll_term.foot_roll_clipped
