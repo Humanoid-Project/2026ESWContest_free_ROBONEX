@@ -40,7 +40,24 @@ def apply_training_env_cfg(env_cfg, checkpoint):
         for name in list(vars(section)):
             if not name.startswith("_") and name not in trained:
                 setattr(section, name, None)
+            else:
+                _drop_untrained_params(getattr(section, name, None), trained.get(name))
+    for group_name, group in vars(getattr(env_cfg, "observations", object())).items():
+        trained_group = (saved.get("observations") or {}).get(group_name) or {}
+        if group_name.startswith("_") or not isinstance(trained_group, dict):
+            continue
+        for name, term in vars(group).items():
+            if not name.startswith("_"):
+                _drop_untrained_params(term, trained_group.get(name))
     return path
+
+
+def _drop_untrained_params(term, trained):
+    params = getattr(term, "params", None)
+    if not isinstance(params, dict) or not isinstance(trained, dict) or not isinstance(trained.get("params"), dict):
+        return
+    for key in [k for k in params if k not in trained["params"]]:
+        del params[key]
 
 
 MOVED_DESCRIPTION_PATHS = (
@@ -134,6 +151,8 @@ def install_joint_obs_delay(unwrapped, steps=1, group="policy", names=("joint_po
     for name, term_cfg in zip(term_names, manager._group_obs_term_cfgs[group]):
         if name not in names:
             continue
+        if hasattr(term_cfg.func, "_max_delay"):
+            raise ValueError(f"{name} is already delayed by the training observation term; do not add a second delay")
         term_cfg.func = _delayed(term_cfg.func, steps)
         wrapped.append(name)
     missing = set(names) - set(wrapped)

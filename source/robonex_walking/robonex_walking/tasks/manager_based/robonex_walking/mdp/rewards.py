@@ -245,6 +245,45 @@ def action_rate_l2_bounded(env: ManagerBasedRLEnv, max_delta_rad: float = 1.0, s
     return _saturate(torch.sum(_bounded_square(target_delta, max_delta_rad), dim=1), scale)
 
 
+class action_smoothness_l2(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._prev = None
+        self._prev2 = None
+        self._step = None
+
+    def reset(self, env_ids=None):
+        if self._prev is None:
+            return
+        if env_ids is None:
+            self._prev = None
+            self._prev2 = None
+            return
+        self._prev[env_ids] = 0.0
+        self._prev2[env_ids] = 0.0
+
+    def _target(self, env):
+        term = env.action_manager.get_term(self.cfg.params.get("term_name", "joint_pos"))
+        scale = torch.as_tensor(term._scale, device=env.device, dtype=torch.float32)
+        return torch.nan_to_num(env.action_manager.action, nan=0.0) * scale.abs()
+
+    def __call__(self, env: ManagerBasedRLEnv, term_name: str = "joint_pos", max_delta_rad: float = 1.0) -> torch.Tensor:
+        target = self._target(env)
+        if self._prev is None:
+            self._prev = target.clone()
+            self._prev2 = target.clone()
+        if self._step != env.common_step_counter:
+            self._step = env.common_step_counter
+            first = target - self._prev
+            second = target - 2.0 * self._prev + self._prev2
+            self._value = torch.sum(_bounded_square(first, max_delta_rad), dim=1) + torch.sum(
+                _bounded_square(second, max_delta_rad), dim=1
+            )
+            self._prev2 = self._prev
+            self._prev = target.clone()
+        return self._value
+
+
 def joint_deviation_l1_bounded(
     env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     scale: float = 0.4,

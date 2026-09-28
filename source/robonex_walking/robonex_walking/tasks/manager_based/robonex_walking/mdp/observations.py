@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from isaaclab.managers import ManagerTermBase
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -40,3 +42,41 @@ def gait_phase(
         moving = (torch.linalg.norm(command, dim=1) > command_deadband).unsqueeze(-1)
         phase = phase * moving
     return phase
+
+
+class delayed_joint_state(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._asset_cfg = cfg.params["asset_cfg"]
+        self._max_delay = int(cfg.params.get("max_delay_steps", 1))
+        shared = getattr(env, "_joint_observation_delay", None)
+        if shared is None:
+            shared = torch.randint(0, self._max_delay + 1, (env.num_envs,), device=env.device)
+            env._joint_observation_delay = shared
+        self._delay = shared
+        self._frames = None
+        self._counter = None
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        env_ids = torch.as_tensor(env_ids, device=self.device)
+        self._delay[env_ids] = torch.randint(0, self._max_delay + 1, (len(env_ids),), device=self.device)
+
+    def __call__(self, env: ManagerBasedRLEnv, asset_cfg, field: str = "pos", max_delay_steps: int = 1):
+        asset = env.scene[asset_cfg.name]
+        if field == "pos":
+            current = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+        else:
+            current = asset.data.joint_vel[:, asset_cfg.joint_ids] - asset.data.default_joint_vel[:, asset_cfg.joint_ids]
+        if self._frames is None:
+            self._frames = current.unsqueeze(0).repeat(self._max_delay + 1, 1, 1)
+        elif self._counter != env.common_step_counter:
+            self._frames = torch.cat([current.unsqueeze(0), self._frames[:-1]], dim=0)
+        else:
+            self._frames[0] = current
+        self._counter = env.common_step_counter
+        fresh = env.episode_length_buf == 0
+        if torch.any(fresh):
+            self._frames[:, fresh] = current[fresh]
+        return self._frames[self._delay, torch.arange(current.shape[0], device=current.device)]
