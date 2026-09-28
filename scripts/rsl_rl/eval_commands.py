@@ -22,6 +22,8 @@ parser.add_argument("--training_cfg", action="store_true",
                     help="Build the env from the checkpoint's params/env.yaml instead of the current code")
 parser.add_argument("--slew_limit", action="store_true",
                     help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
+parser.add_argument("--no_push", action="store_true",
+                    help="Disable the push events (push_robot, push_standing) for a like-for-like comparison across runs")
 parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
 parser.add_argument("--deploy_overspeed", type=float, default=10.0,
@@ -306,6 +308,12 @@ def main():
         print(f"[eval] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
         env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.seed = args_cli.seed
+    pushes_disabled = []
+    if args_cli.no_push:
+        for name in ("push_robot", "push_standing"):
+            if getattr(env_cfg.events, name, None) is not None:
+                setattr(env_cfg.events, name, None)
+                pushes_disabled.append(name)
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
 
     # never resample or zero a command: the harness drives it directly
@@ -364,6 +372,7 @@ def main():
             "slew_limit": bool(args_cli.slew_limit),
             "obs_delay_steps": int(args_cli.obs_delay),
             "obs_delay_terms": obs_delayed,
+            "pushes_disabled": pushes_disabled,
         },
         "joint_order": joint_names,
         "action_scale": {n: float(act_scale[0, i]) for i, n in enumerate(joint_names)},

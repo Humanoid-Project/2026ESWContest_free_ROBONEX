@@ -67,6 +67,24 @@ class SteppingTermsTest(unittest.TestCase):
         for _ in range(20):
             env.step(); self.assertEqual(self.quiet()[0], 0.0)
 
+    def test_open_time_is_capped_while_shuffling(self):
+        env = self.env
+        env.vel[0, :, 0] = 0.3; env.step(); self.quiet()
+        env.vel[0, :, 0] = 0.05; env.forces[0, :, 1, :] = 0.0
+        opened = []
+        for _ in range(100):
+            env.step(); opened.append(self.quiet()[0] == 0.0)
+        self.assertTrue(all(opened[:70]))
+        self.assertFalse(any(opened[80:]))
+
+    def test_gate_state_is_kept_per_parameter_set(self):
+        env = self.env
+        env.vel[0, :, 0] = 0.3; env.step()
+        loose = self.ns["_recovery_quiet"](self.env, 0.40, 0.08, 0.2).tolist()
+        tight = self.ns["_recovery_quiet"](self.env, 0.20, 0.08, 0.2).tolist()
+        self.assertEqual(loose, [1.0, 1.0])
+        self.assertEqual(tight, [0.0, 1.0])
+
     def test_gate_is_computed_once_per_step(self):
         env = self.env
         env.vel[0, :, 0] = 0.3; env.step(); self.quiet()

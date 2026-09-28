@@ -85,19 +85,25 @@ def _recovery_quiet(
     open_speed: float,
     close_speed: float,
     settle_s: float,
+    max_open_s: float = 1.5,
     asset_name: str = "robot",
     sensor_name: str = "contact_forces",
     threshold: float = 1.0,
 ) -> torch.Tensor:
     step = int(env.common_step_counter)
-    state = getattr(env, "_recovery_state", None)
+    states = getattr(env, "_recovery_states", None)
+    if states is None:
+        states = env._recovery_states = {}
+    key = (float(open_speed), float(close_speed), float(settle_s), float(max_open_s))
+    state = states.get(key)
     if state is None or state["open"].shape[0] != env.num_envs:
         asset: Articulation = env.scene[asset_name]
         mass = asset.data.default_mass.to(env.device)
-        state = env._recovery_state = {
+        state = states[key] = {
             "step": -1,
             "open": torch.zeros(env.num_envs, dtype=torch.bool, device=env.device),
             "settle": torch.zeros(env.num_envs, device=env.device),
+            "since_fast": torch.zeros(env.num_envs, device=env.device),
             "mass": mass / mass.sum(dim=1, keepdim=True),
         }
     if state["step"] != step:
@@ -109,10 +115,12 @@ def _recovery_quiet(
         forces = torch.nan_to_num(sensor.data.net_forces_w_history, nan=0.0, posinf=0.0, neginf=0.0)
         double = torch.all(torch.norm(forces, dim=-1).amax(dim=1) > threshold, dim=1)
         fresh = env.episode_length_buf <= 1
-        state["open"] = (state["open"] & ~fresh) | (speed > open_speed)
+        fast = speed > open_speed
+        state["open"] = (state["open"] & ~fresh) | fast
+        state["since_fast"] = torch.where(fast | fresh, torch.zeros_like(state["since_fast"]), state["since_fast"] + env.step_dt)
         calm = double & (speed < close_speed)
         state["settle"] = torch.where(calm & ~fresh, state["settle"] + env.step_dt, torch.zeros_like(state["settle"]))
-        state["open"] = state["open"] & (state["settle"] < settle_s - 1.0e-6)
+        state["open"] = state["open"] & (state["settle"] < settle_s - 1.0e-6) & (state["since_fast"] < max_open_s - 1.0e-6)
     return (~state["open"]).float()
 
 
