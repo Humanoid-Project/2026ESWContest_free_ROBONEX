@@ -556,6 +556,8 @@ def feet_stance_width_l2(
     standing_width: float | None = None,
     command_name: str = "base_velocity",
     command_deadband: float = 0.05,
+    standing_window: tuple[float, float] | None = None,
+    standing_scale: float | None = None,
 ) -> torch.Tensor:
     """Penalize feet width deviation from the target for the current command.
 
@@ -568,11 +570,39 @@ def feet_stance_width_l2(
     feet_pos_b = _body_pos_b(env, asset_cfg)
     foot_width = torch.abs(feet_pos_b[:, 0, 1] - feet_pos_b[:, 1, 1])
     target = torch.full_like(foot_width, target_width)
+    if standing_window is not None:
+        command = env.command_manager.get_command(command_name)
+        standing = torch.linalg.norm(command, dim=1) < command_deadband
+        walking_penalty = _saturate(_bounded_square(foot_width - target, 2.0), scale)
+        outside = torch.clamp(standing_window[0] - foot_width, min=0.0) + torch.clamp(
+            foot_width - standing_window[1], min=0.0
+        )
+        standing_penalty = _saturate(
+            _bounded_square(outside, 2.0), scale if standing_scale is None else standing_scale
+        )
+        return torch.where(standing, standing_penalty, walking_penalty)
     if standing_width is not None:
         command = env.command_manager.get_command(command_name)
         standing = torch.linalg.norm(command, dim=1) < command_deadband
         target = torch.where(standing, torch.full_like(foot_width, standing_width), target)
     return _saturate(_bounded_square(foot_width - target, 2.0), scale)
+
+
+def standing_joint_load_l1(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    reference_torque: float = 20.0,
+    max_torque: float = 60.0,
+    command_name: str = "base_velocity",
+    command_deadband: float = 0.05,
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    torque = torch.nan_to_num(
+        asset.data.applied_torque[:, asset_cfg.joint_ids], nan=max_torque, posinf=max_torque, neginf=-max_torque
+    )
+    load = torch.sum(torch.clamp(torque.abs(), max=max_torque), dim=1) / reference_torque
+    command = env.command_manager.get_command(command_name)
+    return load * (torch.linalg.norm(command, dim=1) < command_deadband)
 
 
 def unstable_joint_vel(

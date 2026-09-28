@@ -1,4 +1,5 @@
 from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 
 from . import mdp
@@ -46,6 +47,10 @@ SLEW_LAG_WEIGHT = -1.0
 SLEW_LAG_SCALE = 0.0025
 FOOT_ROLL_EXCESS_WEIGHT = -1.0
 FOOT_ROLL_EXCESS_SCALE = 0.01
+STANDING_WIDTH_WINDOW = (0.24, 0.30)
+STANDING_WIDTH_SCALE = 0.0009
+STANDING_HIP_ROLL_LOAD_WEIGHT = -0.2
+HIP_ROLL_LOAD_REFERENCE = 20.0
 
 
 @configclass
@@ -91,7 +96,17 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
 
         self.rewards.base_height.params["target_height"] = BASE_HEIGHT
         self.rewards.feet_width.params["target_width"] = STANCE_WIDTH_DEFAULT
-        self.rewards.feet_width.params["standing_width"] = round(STANCE_WIDTH_DEFAULT + STANDING_WIDENING, 4)
+        self.rewards.feet_width.params["standing_width"] = None
+        self.rewards.feet_width.params["standing_window"] = STANDING_WIDTH_WINDOW
+        self.rewards.feet_width.params["standing_scale"] = STANDING_WIDTH_SCALE
+        self.rewards.stand_hip_roll_load = RewTerm(
+            func=mdp.standing_joint_load_l1,
+            weight=STANDING_HIP_ROLL_LOAD_WEIGHT,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint"]),
+                "reference_torque": HIP_ROLL_LOAD_REFERENCE,
+            },
+        )
         self.rewards.feet_clearance.params["target_height"] = FOOT_CLEARANCE_V2
         self.rewards.feet_clearance.params["sole_corners"] = FOOT_SOLE_CORNERS
         self.rewards.foot_slip.func = mdp.foot_slip_latest_l2
