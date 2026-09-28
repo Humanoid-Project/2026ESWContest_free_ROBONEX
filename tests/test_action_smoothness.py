@@ -59,7 +59,7 @@ class ActionSmoothnessTest(unittest.TestCase):
         a = float(term(env)); b = float(term(env))
         self.assertEqual(a, b)
 
-    def test_reset_zeroes_history_of_those_envs(self):
+    def test_reset_seeds_history_with_the_first_target(self):
         cls = load()
         env = Env([0.25])
         env.action_manager.action = torch.tensor([[1.0], [1.0]])
@@ -67,7 +67,26 @@ class ActionSmoothnessTest(unittest.TestCase):
         env.common_step_counter = 1
         term(env)
         term.reset(torch.tensor([0]))
-        self.assertEqual(term._prev[:, 0].tolist(), [0.0, 0.25])
+        env.common_step_counter = 2
+        env.action_manager.action = torch.tensor([[3.0], [1.0]])
+        self.assertEqual(term(env).tolist(), [0.0, 0.0])
+        env.common_step_counter = 3
+        env.action_manager.action = torch.tensor([[3.4], [1.0]])
+        self.assertAlmostEqual(float(term(env)[0]), 2 * (0.4 * 0.25) ** 2, places=6)
+
+    def test_weight_ramps_from_start_to_one(self):
+        cls = load()
+        values = {}
+        for k in (50, 100, 200):
+            env = Env([0.25])
+            term = cls(types.SimpleNamespace(params={}), env)
+            for step, action in ((k - 2, 0.0), (k - 1, 0.0), (k, 1.0)):
+                env.common_step_counter = step
+                env.action_manager.action = torch.tensor([[action]])
+                values[k] = float(term(env, ramp_start=0.2, ramp_steps=100))
+        self.assertAlmostEqual(values[100], 2 * 0.25**2, places=6)
+        self.assertAlmostEqual(values[50] / values[100], 0.6, places=5)
+        self.assertAlmostEqual(values[200], values[100], places=6)
 
 
 if __name__ == "__main__":

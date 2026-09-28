@@ -71,7 +71,7 @@ DECIMATION = 8
 POSITION_ITERATIONS = 32
 DEPLOY_MAX_SPEED = 6.0
 DEPLOY_MAX_ACCEL = 120.0
-SLEW_LAG_WEIGHT = -1.0
+SLEW_LAG_WEIGHT = 0.0
 SLEW_LAG_SCALE = 0.0025
 FOOT_ROLL_EXCESS_WEIGHT = -1.0
 FOOT_ROLL_EXCESS_SCALE = 0.01
@@ -82,8 +82,8 @@ HIP_ROLL_LOAD_REFERENCE = 20.0
 RECOVERY_GATE = (0.20, 0.08, 0.2, 1.5)
 STANDING_PUSH_SPEED = 0.5
 STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
-JOINT_OBS_MAX_DELAY_STEPS = 1
 ACTION_SMOOTHNESS_WEIGHT = -1.0
+ACTION_SMOOTHNESS_RAMP = (0.2, 300 * 24)
 
 
 @configclass
@@ -228,12 +228,8 @@ class ObservationsCfg:
 
         # Joint Position (12) (rad)
         joint_pos_rel = ObsTerm(
-            func=mdp.delayed_joint_state,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
-                "field": "pos",
-                "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
-            },
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS)},
             # G1 uses Unoise(-0.01, 0.01); a uniform half-width of h has std h/sqrt(3).
             # 0.01 was that half-width copied straight into a Gaussian std field, which
             # made this the only observation louder than G1 (1.73x) while the other three
@@ -242,12 +238,8 @@ class ObservationsCfg:
         )
         # Joint Velocity (12) (rad/s)
         joint_vel_rel = ObsTerm(
-            func=mdp.delayed_joint_state,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
-                "field": "vel",
-                "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
-            },
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS)},
             noise=GaussianNoiseCfg(mean=0.0, std=0.75),
         )
 
@@ -532,7 +524,11 @@ class RewardsCfg:
 
     # Regularization
     action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-0.2)
-    action_smoothness = RewTerm(func=mdp.action_smoothness_l2, weight=ACTION_SMOOTHNESS_WEIGHT)
+    action_smoothness = RewTerm(
+        func=mdp.action_smoothness_l2,
+        weight=ACTION_SMOOTHNESS_WEIGHT,
+        params={"ramp_start": ACTION_SMOOTHNESS_RAMP[0], "ramp_steps": ACTION_SMOOTHNESS_RAMP[1]},
+    )
     joint_deviation_yaw_roll = RewTerm(
         func=mdp.joint_deviation_l1_bounded,
         weight=-0.2,
