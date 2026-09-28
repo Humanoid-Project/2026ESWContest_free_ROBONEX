@@ -80,6 +80,42 @@ def _contact_mask(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, threshold:
     return torch.norm(forces, dim=-1).amax(dim=1) > threshold
 
 
+def _recovery_quiet(
+    env: ManagerBasedRLEnv,
+    open_speed: float,
+    close_speed: float,
+    settle_s: float,
+    asset_name: str = "robot",
+    sensor_name: str = "contact_forces",
+    threshold: float = 1.0,
+) -> torch.Tensor:
+    step = int(env.common_step_counter)
+    state = getattr(env, "_recovery_state", None)
+    if state is None or state["open"].shape[0] != env.num_envs:
+        asset: Articulation = env.scene[asset_name]
+        mass = asset.data.default_mass.to(env.device)
+        state = env._recovery_state = {
+            "step": -1,
+            "open": torch.zeros(env.num_envs, dtype=torch.bool, device=env.device),
+            "settle": torch.zeros(env.num_envs, device=env.device),
+            "mass": mass / mass.sum(dim=1, keepdim=True),
+        }
+    if state["step"] != step:
+        state["step"] = step
+        asset: Articulation = env.scene[asset_name]
+        velocity = torch.nan_to_num(asset.data.body_com_lin_vel_w[:, :, :2], nan=0.0, posinf=0.0, neginf=0.0)
+        speed = torch.linalg.norm(torch.sum(velocity * state["mass"].unsqueeze(-1), dim=1), dim=1)
+        sensor: ContactSensor = env.scene.sensors[sensor_name]
+        forces = torch.nan_to_num(sensor.data.net_forces_w_history, nan=0.0, posinf=0.0, neginf=0.0)
+        double = torch.all(torch.norm(forces, dim=-1).amax(dim=1) > threshold, dim=1)
+        fresh = env.episode_length_buf <= 1
+        state["open"] = (state["open"] & ~fresh) | (speed > open_speed)
+        calm = double & (speed < close_speed)
+        state["settle"] = torch.where(calm & ~fresh, state["settle"] + env.step_dt, torch.zeros_like(state["settle"]))
+        state["open"] = state["open"] & (state["settle"] < settle_s - 1.0e-6)
+    return (~state["open"]).float()
+
+
 def track_lin_vel_x_exp(
     env: ManagerBasedRLEnv,
     std: float,
@@ -217,6 +253,7 @@ def stand_still_pose_l1(
     command_name: str = "base_velocity",
     command_deadband: float = 0.05,
     max_abs: float = 1.0,
+    recovery_gate: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
     """Penalize deviation from the default pose while the velocity command is zero.
 
@@ -229,7 +266,10 @@ def stand_still_pose_l1(
     angle = torch.nan_to_num(angle, nan=max_abs, posinf=max_abs, neginf=-max_abs)
     deviation = torch.sum(torch.clamp(torch.abs(angle), max=max_abs), dim=1)
     command = env.command_manager.get_command(command_name)
-    return deviation * (torch.linalg.norm(command, dim=1) < command_deadband)
+    penalty = deviation * (torch.linalg.norm(command, dim=1) < command_deadband)
+    if recovery_gate is not None:
+        penalty = penalty * _recovery_quiet(env, *recovery_gate)
+    return penalty
 
 
 def torque_overrun_l2(
@@ -499,8 +539,7 @@ def stand_still_airborne(
     command_name: str = "base_velocity",
     command_deadband: float = 0.05,
     threshold: float = 1.0,
-    speed_gate: float | None = None,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    recovery_gate: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
     """Penalize not being in double stance while the velocity command is zero.
 
@@ -511,10 +550,8 @@ def stand_still_airborne(
     not_double = (torch.sum(contacts.int(), dim=1) < 2).float()
     command = env.command_manager.get_command(command_name)
     penalty = not_double * (torch.linalg.norm(command, dim=1) < command_deadband)
-    if speed_gate is not None:
-        asset: Articulation = env.scene[asset_cfg.name]
-        speed = torch.linalg.norm(torch.nan_to_num(asset.data.root_lin_vel_b[:, :2], nan=0.0), dim=1)
-        penalty = penalty * (speed < speed_gate)
+    if recovery_gate is not None:
+        penalty = penalty * _recovery_quiet(env, *recovery_gate)
     return penalty
 
 
@@ -602,6 +639,7 @@ def standing_joint_load_l1(
     max_torque: float = 60.0,
     command_name: str = "base_velocity",
     command_deadband: float = 0.05,
+    recovery_gate: tuple[float, float, float] | None = None,
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     torque = torch.nan_to_num(
@@ -609,7 +647,10 @@ def standing_joint_load_l1(
     )
     load = torch.sum(torch.clamp(torque.abs(), max=max_torque), dim=1) / reference_torque
     command = env.command_manager.get_command(command_name)
-    return load * (torch.linalg.norm(command, dim=1) < command_deadband)
+    penalty = load * (torch.linalg.norm(command, dim=1) < command_deadband)
+    if recovery_gate is not None:
+        penalty = penalty * _recovery_quiet(env, *recovery_gate)
+    return penalty
 
 
 def unstable_joint_vel(

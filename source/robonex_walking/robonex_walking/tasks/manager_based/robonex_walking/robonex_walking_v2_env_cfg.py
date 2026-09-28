@@ -79,7 +79,7 @@ STANDING_WIDTH_WINDOW = (0.24, 0.30)
 STANDING_WIDTH_SCALE = 0.0009
 STANDING_HIP_ROLL_LOAD_WEIGHT = -0.2
 HIP_ROLL_LOAD_REFERENCE = 20.0
-STAND_STILL_SPEED_GATE = 0.15
+RECOVERY_GATE = (0.20, 0.08, 0.2)
 STANDING_PUSH_SPEED = 0.8
 STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
 
@@ -432,7 +432,7 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True
             ),
-            "speed_gate": STAND_STILL_SPEED_GATE,
+            "recovery_gate": RECOVERY_GATE,
         },
     )
 
@@ -546,6 +546,7 @@ class RewardsCfg:
         weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_knee_pitch_joint"]),
+            "recovery_gate": RECOVERY_GATE,
         },
     )
     joint_pos_limits = RewTerm(
@@ -583,6 +584,7 @@ class RewardsCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint"]),
             "reference_torque": HIP_ROLL_LOAD_REFERENCE,
+            "recovery_gate": RECOVERY_GATE,
         },
     )
 
