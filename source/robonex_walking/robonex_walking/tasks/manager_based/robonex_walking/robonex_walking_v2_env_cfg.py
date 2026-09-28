@@ -96,7 +96,7 @@ class RoboNexWalkingV2EnvCfg(RoboNexWalkingEnvCfg):
 
         self.rewards.base_height.params["target_height"] = BASE_HEIGHT
         self.rewards.feet_width.params["target_width"] = STANCE_WIDTH_DEFAULT
-        self.rewards.feet_width.params["standing_width"] = None
+        self.rewards.feet_width.params["standing_width"] = round(STANCE_WIDTH_DEFAULT + STANDING_WIDENING, 4)
         self.rewards.feet_width.params["standing_window"] = STANDING_WIDTH_WINDOW
         self.rewards.feet_width.params["standing_scale"] = STANDING_WIDTH_SCALE
         self.rewards.stand_hip_roll_load = RewTerm(
