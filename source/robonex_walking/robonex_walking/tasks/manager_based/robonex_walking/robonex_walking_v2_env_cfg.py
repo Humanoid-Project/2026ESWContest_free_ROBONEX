@@ -83,6 +83,7 @@ RECOVERY_GATE = (0.20, 0.08, 0.2, 1.5)
 STANDING_PUSH_SPEED = 0.5
 STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
 ACTION_SMOOTHNESS_WEIGHT = -1.0
+ACTION_SMOOTHNESS_SECOND_ORDER = 0.0
 ACTION_SMOOTHNESS_RAMP = (0.2, 300 * 24)
 
 
@@ -527,7 +528,11 @@ class RewardsCfg:
     action_smoothness = RewTerm(
         func=mdp.action_smoothness_l2,
         weight=ACTION_SMOOTHNESS_WEIGHT,
-        params={"ramp_start": ACTION_SMOOTHNESS_RAMP[0], "ramp_steps": ACTION_SMOOTHNESS_RAMP[1]},
+        params={
+            "second_order": ACTION_SMOOTHNESS_SECOND_ORDER,
+            "ramp_start": ACTION_SMOOTHNESS_RAMP[0],
+            "ramp_steps": ACTION_SMOOTHNESS_RAMP[1],
+        },
     )
     joint_deviation_yaw_roll = RewTerm(
         func=mdp.joint_deviation_l1_bounded,

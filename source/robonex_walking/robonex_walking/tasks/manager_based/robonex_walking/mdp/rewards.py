@@ -273,6 +273,7 @@ class action_smoothness_l2(ManagerTermBase):
         env: ManagerBasedRLEnv,
         term_name: str = "joint_pos",
         max_delta_rad: float = 1.0,
+        second_order: float = 1.0,
         ramp_start: float = 1.0,
         ramp_steps: int = 0,
     ) -> torch.Tensor:
@@ -292,7 +293,7 @@ class action_smoothness_l2(ManagerTermBase):
             ramp = 1.0 if ramp_steps <= 0 else min(1.0, ramp_start + (1.0 - ramp_start) * env.common_step_counter / ramp_steps)
             self._value = ramp * (
                 torch.sum(_bounded_square(first, max_delta_rad), dim=1)
-                + torch.sum(_bounded_square(second, max_delta_rad), dim=1)
+                + second_order * torch.sum(_bounded_square(second, max_delta_rad), dim=1)
             )
             self._prev2 = self._prev
             self._prev = target.clone()

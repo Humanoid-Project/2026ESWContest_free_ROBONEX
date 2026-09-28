@@ -89,5 +89,16 @@ class ActionSmoothnessTest(unittest.TestCase):
         self.assertAlmostEqual(values[200], values[100], places=6)
 
 
+    def test_second_order_can_be_switched_off(self):
+        cls = load()
+        env = Env([0.25])
+        term = cls(types.SimpleNamespace(params={}), env)
+        for step, action in ((0, 0.0), (1, 0.0), (2, 1.0)):
+            env.common_step_counter = step
+            env.action_manager.action = torch.tensor([[action]])
+            value = float(term(env, second_order=0.0))
+        self.assertAlmostEqual(value, 0.25**2, places=6)
+
+
 if __name__ == "__main__":
     unittest.main()
