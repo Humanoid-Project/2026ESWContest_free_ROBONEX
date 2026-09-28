@@ -8,7 +8,7 @@ import os
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Evaluate a RoboNex walking policy per velocity command.")
-parser.add_argument("--task", type=str, default="RoboNex-Walking-v0")
+parser.add_argument("--task", type=str, default="RoboNex-Walking-V2-Edu-v0")
 parser.add_argument("--num_envs", type=int, default=512)
 parser.add_argument("--checkpoint", type=str, required=True)
 parser.add_argument("--warmup_steps", type=int, default=120)
@@ -49,10 +49,6 @@ from deploy_effects import apply_training_env_cfg, install_joint_obs_delay, inst
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 from robonex_walking.tasks.manager_based.robonex_walking.mdp.walk_metrics import WalkMetrics
-from robonex_walking.tasks.manager_based.robonex_walking.robot_contract import (
-    FOOT_ORIGIN_REST_HEIGHT,
-    FOOT_SOLE_CORNERS,
-)
 
 CELLS = {
     "fwd_slow": (0.1, 0.0, 0.0),
@@ -333,9 +329,9 @@ def main():
 
     metrics = WalkMetrics(
         unwrapped,
-        getattr(unwrapped.cfg, "foot_origin_rest_height", FOOT_ORIGIN_REST_HEIGHT),
+        unwrapped.cfg.foot_origin_rest_height,
         unwrapped.step_dt,
-        sole_corners=getattr(unwrapped.cfg, "foot_sole_corners", FOOT_SOLE_CORNERS),
+        sole_corners=unwrapped.cfg.foot_sole_corners,
     )
 
     action_term = unwrapped.action_manager.get_term("joint_pos")

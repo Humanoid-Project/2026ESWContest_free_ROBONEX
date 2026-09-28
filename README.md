@@ -31,9 +31,9 @@ RoboNex는 무릎의 4절 링크와 두 모터가 결합된 차동 발목을 포
 | 핵심 기구 | 폐루프 무릎 4절 링크, 2모터 차동 발목 |
 | 학습 환경 | NVIDIA Isaac Sim / Isaac Lab |
 | 강화학습 | RSL-RL PPO |
-| Gym Task | `RoboNex-Walking-v0` |
+| Gym Task | `RoboNex-Walking-V2-Edu-v0` (Pro·Max: `-V2-Pro-v0`, `-V2-Max-v0`) |
 | 목표 동작 | 평지에서 `0.3 m/s` 고정 전진 속도 추종 |
-| 물리·정책 주기 | 물리 `250 Hz`, 정책 `50 Hz` |
+| 물리·정책 주기 | 물리 `400 Hz`, 정책 `50 Hz` |
 | 정책 입출력 | 관측 `42-D`, 행동 `12-D` |
 | 병렬 환경 | `512` environments |
 | 에피소드 | 최대 `20 s` |
@@ -180,7 +180,7 @@ flowchart LR
 
 | 구분 | 상태 |
 | --- | --- |
-| `RoboNex-Walking-v0` task 등록 | 구현 완료 |
+| `RoboNex-Walking-V2-{Edu,Pro,Max}-v0` task 등록 | 구현 완료 |
 | 폐루프 RoboNex USD 및 공통 관절 계약 연결 | 구현 완료 |
 | 42차원 관측·12차원 행동 구성 | 구현 완료 |
 | 보행 보상함수 및 도메인 랜덤화 | 구현 완료 |
@@ -208,8 +208,8 @@ robonex-walking/
     └── robonex_walking/tasks/manager_based/robonex_walking/
         ├── agents/
         ├── mdp/
-        ├── robot_contract.py
-        └── robonex_walking_env_cfg.py
+        ├── robot_contract_v2.py
+        └── robonex_walking_v2_env_cfg.py
 ```
 
 ---

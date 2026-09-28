@@ -19,7 +19,8 @@ from robonex_common.policy import (
     sha256_file,
 )
 
-TASK = "RoboNex-Walking-v0"
+TASKS = {"ver1": "RoboNex-Walking-v0", "ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
+DESCRIPTION_MODELS = {"ver1": "ver1/mujoco/robot/scene.xml", "ver2_edu": "ver2/mujoco/robot/edu/scene_fixed.xml"}
 
 RECEIPT_VERSION = 1
 
@@ -181,7 +182,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--description-root", type=Path)
     parser.add_argument("--common-root", type=Path)
-    parser.add_argument("--description-model", default="ver1/mujoco/robot/scene.xml")
+    parser.add_argument("--description-model", default=None, help="Default: the robot model's MuJoCo scene")
     parser.add_argument(
         "--checkpoint",
         type=Path,
@@ -195,7 +196,7 @@ def main():
         help="Take action offsets/scales/clips and the task id from the checkpoint's params/env.yaml "
              "instead of robonex-common (needed for the Ver.2 tasks, whose limits and default pose differ)",
     )
-    parser.add_argument("--task", default=TASK)
+    parser.add_argument("--task", default=None, help="Default: the robot model's training task")
     parser.add_argument("--robot-model", default=None, choices=("ver1", "ver2_edu"),
                         help="Robot profile in robonex-common. With --checkpoint it is inferred from the saved "
                              "params/env.yaml and this must agree; without a checkpoint only ver1 is allowed")
@@ -252,8 +253,8 @@ def main():
             raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
         args.robot_model = inferred
         print(f"robot model: {inferred} (inferred from {saved_env})")
-    if args.robot_model != "ver1" and args.description_model == "ver1/mujoco/robot/scene.xml":
-        args.description_model = "ver2/mujoco/robot/edu/scene_fixed.xml"
+    args.description_model = args.description_model or DESCRIPTION_MODELS[args.robot_model]
+    args.task = args.task or TASKS[args.robot_model]
 
     roll = robot_model(args.robot_model).foot_roll
     roll_fields = {} if args.robot_model == "ver1" else dict(

@@ -55,12 +55,6 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
 
 @configclass
-class ClosedLoopPPORunnerCfg(PPORunnerCfg):
-
-    experiment_name = "robonex_walking_closed_loop"
-
-
-@configclass
 class V2EduPPORunnerCfg(PPORunnerCfg):
 
     experiment_name = "robonex_walking_v2_edu"

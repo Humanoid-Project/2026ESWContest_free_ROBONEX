@@ -10,7 +10,7 @@ import os
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Record a sim joint trace comparable to hardware telemetry.")
-parser.add_argument("--task", type=str, default="RoboNex-Walking-v0")
+parser.add_argument("--task", type=str, default="RoboNex-Walking-V2-Edu-v0")
 parser.add_argument("--num_envs", type=int, default=64)
 parser.add_argument("--checkpoint", type=str, required=True)
 parser.add_argument("--vx", type=float, default=0.0)
@@ -138,9 +138,8 @@ def main():
     # Mirrors of the reward-side quantities that world-frame columns cannot reconstruct.
     # feet_stance_width_l2 reads the foot separation in the BASE frame; a yawing robot makes
     # the world-frame separation a different number entirely.
-    from robonex_walking.tasks.manager_based.robonex_walking.robot_contract import FOOT_SOLE_CORNERS
     from robonex_common.runtime import GAIT_PERIOD_S
-    sole = torch.as_tensor(FOOT_SOLE_CORNERS, dtype=torch.float32, device=unwrapped.device)
+    sole = torch.as_tensor(unwrapped.cfg.foot_sole_corners, dtype=torch.float32, device=unwrapped.device)
     stance_fraction = 0.55
     # _clip, _scale and _offset may or may not carry a leading env dimension depending on
     # how the term was configured; reduce each to this one env's per-joint row.

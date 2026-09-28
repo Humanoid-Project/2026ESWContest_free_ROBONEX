@@ -10,11 +10,11 @@ Current source inventory (2026-09-05). This page documents accepted arguments; i
 | `--output` | `None` | Manifest destination; defaults to policy_manifest.json beside the policy.  |
 | `--description-root` | `None` | Description checkout override; otherwise resolver/environment/sibling lookup.  |
 | `--common-root` | `None` | Local common checkout used for Git provenance; still needed despite tag-pip installation.  |
-| `--description-model` | `ver1/mujoco/robot/scene.xml` | Model path relative to the description checkout; becomes `ver2/mujoco/robot/edu/scene_fixed.xml` for `ver2_edu` when left at the default.  |
+| `--description-model` | `Auto-detected` | Model path relative to the description checkout; defaults to the robot model's scene (`ver2_edu`: `ver2/mujoco/robot/edu/scene_fixed.xml`).  |
 | `--checkpoint` | `None` | The `.pt` the ONNX came from. Its `params/env.yaml` supplies the action normalisation and decides the robot model; required for Ver.2.  |
 | `--robot-model` | `None` | `ver1` or `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree. Without a checkpoint it must be given, and only `ver1` is allowed.  |
 | `--actions-from-checkpoint` | `False` | Kept for older commands; the saved actions are always used when `--checkpoint` is given.  |
-| `--task` | `RoboNex-Walking-v0` | Task id recorded in the manifest.  |
+| `--task` | `Auto-detected` | Task id recorded in the manifest; defaults to the robot model's training task (`ver2_edu`: `RoboNex-Walking-V2-Edu-v0`).  |
 
 Schema 2 (Ver.1) and schema 3 (Ver.2: adds `robot_model` and the coupled foot-roll clip) fingerprint the policy, MuJoCo model bundle, common runtime source, and training source; the contract is validated before it is saved, and `export_receipt.json` records the training slew stage.
 
@@ -106,6 +106,6 @@ The following apply to `zero_agent.py`, `random_agent.py`, `rsl_rl/train.py`, an
 
 ## Configuration values are separate from CLI flags
 
-`train.py` and `play.py` also accept Hydra configuration overrides through their remaining arguments. The full configuration namespace is defined by the selected environment/agent, not by a fixed argparse list. Review `source/*/*/tasks/manager_based/*/*_env_cfg.py`, `agents/rsl_rl_ppo_cfg.py`, and `robot_contract.py` for rewards, episode duration, environment count, physics timestep, decimation, gains, observation noise, action normalization, and PPO settings. `ROBONEX_DESCRIPTION_ROOT` overrides the description checkout. `ROBONEX_COMMON_ROOT` is still used by the manifest exporter's checkout-provenance path.
+`train.py` and `play.py` also accept Hydra configuration overrides through their remaining arguments. The full configuration namespace is defined by the selected environment/agent, not by a fixed argparse list. Review `source/*/*/tasks/manager_based/*/robonex_walking_v2_env_cfg.py`, `agents/rsl_rl_ppo_cfg.py`, and `robot_contract_v2.py` for rewards, episode duration, environment count, physics timestep, decimation, gains, observation noise, action normalization, and PPO settings. `ROBONEX_DESCRIPTION_ROOT` overrides the description checkout. `ROBONEX_COMMON_ROOT` is still used by the manifest exporter's checkout-provenance path.
 
 `zero_agent.py` sends a zero **normalized action**, not a mechanical-zero joint target: the current action offset is the midpoint of each clipped joint range. Neither agent script is a hardware controller.

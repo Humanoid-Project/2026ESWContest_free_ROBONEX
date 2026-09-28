@@ -44,7 +44,6 @@ def apply_training_env_cfg(env_cfg, checkpoint):
 
 
 MOVED_DESCRIPTION_PATHS = (
-    ("/robonex-description/isaac/", "/robonex-description/ver1/isaac/", "moved unchanged in the 2026-09-27 ver1/ver2 split"),
     ("/robonex-description/new_urdf/", "/robonex-description/ver2/",
      "Ver.2 USD regenerated 2026-09-27 with the decided hip limits; runs before W73 trained on the older limits"),
 )
