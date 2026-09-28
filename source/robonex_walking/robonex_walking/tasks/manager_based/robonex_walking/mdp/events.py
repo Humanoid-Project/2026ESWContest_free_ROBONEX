@@ -25,3 +25,23 @@ def reset_closed_loop_to_default(
         joint_ids=asset_cfg.joint_ids,
         env_ids=env_ids,
     )
+
+
+def push_standing_by_setting_velocity(
+    env,
+    env_ids: torch.Tensor,
+    velocity_range: dict[str, tuple[float, float]],
+    command_name: str = "base_velocity",
+    command_deadband: float = 0.05,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    command = env.command_manager.get_command(command_name)[env_ids]
+    standing = env_ids[torch.linalg.norm(command, dim=1) < command_deadband]
+    if standing.numel() == 0:
+        return
+    asset: Articulation = env.scene[asset_cfg.name]
+    vel_w = asset.data.root_vel_w[standing].clone()
+    for index, key in enumerate(("x", "y", "z", "roll", "pitch", "yaw")):
+        low, high = velocity_range.get(key, (0.0, 0.0))
+        vel_w[:, index] += torch.empty(standing.numel(), device=vel_w.device).uniform_(low, high)
+    asset.write_root_velocity_to_sim(vel_w, env_ids=standing)

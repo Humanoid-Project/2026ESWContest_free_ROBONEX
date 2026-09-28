@@ -79,6 +79,9 @@ STANDING_WIDTH_WINDOW = (0.24, 0.30)
 STANDING_WIDTH_SCALE = 0.0009
 STANDING_HIP_ROLL_LOAD_WEIGHT = -0.2
 HIP_ROLL_LOAD_REFERENCE = 20.0
+STAND_STILL_SPEED_GATE = 0.15
+STANDING_PUSH_SPEED = 0.8
+STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
 
 
 @configclass
@@ -329,6 +332,18 @@ class EventCfg:
         },
     )
 
+    push_standing = EventTerm(
+        func=mdp.push_standing_by_setting_velocity,
+        mode="interval",
+        interval_range_s=STANDING_PUSH_INTERVAL_S,
+        params={
+            "velocity_range": {
+                "x": (-STANDING_PUSH_SPEED, STANDING_PUSH_SPEED),
+                "y": (-STANDING_PUSH_SPEED, STANDING_PUSH_SPEED),
+            },
+        },
+    )
+
     # Randomization friction
     randomize_friction = EventTerm(
         func=mdp.randomize_rigid_body_material,
@@ -417,6 +432,7 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True
             ),
+            "speed_gate": STAND_STILL_SPEED_GATE,
         },
     )
 

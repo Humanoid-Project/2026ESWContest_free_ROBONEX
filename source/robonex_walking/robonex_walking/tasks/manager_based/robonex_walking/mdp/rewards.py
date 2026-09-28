@@ -499,6 +499,8 @@ def stand_still_airborne(
     command_name: str = "base_velocity",
     command_deadband: float = 0.05,
     threshold: float = 1.0,
+    speed_gate: float | None = None,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
     """Penalize not being in double stance while the velocity command is zero.
 
@@ -508,7 +510,12 @@ def stand_still_airborne(
     contacts = _contact_mask(env, sensor_cfg, threshold)
     not_double = (torch.sum(contacts.int(), dim=1) < 2).float()
     command = env.command_manager.get_command(command_name)
-    return not_double * (torch.linalg.norm(command, dim=1) < command_deadband)
+    penalty = not_double * (torch.linalg.norm(command, dim=1) < command_deadband)
+    if speed_gate is not None:
+        asset: Articulation = env.scene[asset_cfg.name]
+        speed = torch.linalg.norm(torch.nan_to_num(asset.data.root_lin_vel_b[:, :2], nan=0.0), dim=1)
+        penalty = penalty * (speed < speed_gate)
+    return penalty
 
 
 def target_clip_excess_l2(env: ManagerBasedRLEnv, max_excess: float = 2.0, scale: float = 0.01) -> torch.Tensor:
