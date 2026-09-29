@@ -11,8 +11,22 @@ from isaaclab_rl.rsl_rl import (
     RslRlSymmetryCfg,
 )
 from robonex_common.limits import RUNNER_ACTION_CLIP
+from robonex_walking.algorithms import SmoothPPO
 
 from ..mdp import symmetry
+
+
+@configclass
+class SmoothPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    class_name: str = SmoothPPO.__name__
+    hf_gyro_coef: float = 0.0
+    lcp_coef: float = 0.0
+    action_scales: dict[str, float] | None = None
+    hf_freqs: tuple[float, ...] = (12.5, 18.75, 25.0)
+    step_dt: float = 0.02
+    hf_eps: float = 0.05
+    hf_samples: int = 2048
+
 
 @configclass
 class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
@@ -33,7 +47,9 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         activation = "elu",
     )
 
-    algorithm = RslRlPpoAlgorithmCfg(
+    algorithm = SmoothPpoAlgorithmCfg(
+        hf_gyro_coef = 0.05,
+        lcp_coef = 0.0,
         value_loss_coef = 1.0,
         use_clipped_value_loss = True,
         clip_param = 0.2,

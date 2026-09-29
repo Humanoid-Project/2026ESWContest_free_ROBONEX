@@ -7,6 +7,8 @@
 Python module serving as a project/extension template.
 """
 
+from . import algorithms
+
 # Register Gym environments.
 from .tasks import *
 
