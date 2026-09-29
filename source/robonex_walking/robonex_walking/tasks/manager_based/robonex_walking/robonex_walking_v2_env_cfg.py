@@ -81,6 +81,8 @@ STANDING_WIDTH_WINDOW = (0.24, 0.30)
 STANDING_WIDTH_SCALE = 0.0009
 STANDING_HIP_ROLL_LOAD_WEIGHT = -0.2
 HIP_ROLL_LOAD_REFERENCE = 20.0
+JOINT_LOAD_WEIGHT = 0.0
+JOINT_LOAD_MAX_RATIO = 5.0
 RECOVERY_GATE = (0.20, 0.08, 0.2, 1.5)
 STANDING_PUSH_SPEED = 0.5
 STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
@@ -613,6 +615,15 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_roll_joint"]),
             "reference_torque": HIP_ROLL_LOAD_REFERENCE,
             "recovery_gate": RECOVERY_GATE,
+        },
+    )
+    joint_load = RewTerm(
+        func=mdp.joint_load_rating_l2,
+        weight=JOINT_LOAD_WEIGHT,
+        params={
+            "rated": RATED_TORQUE_STANDSTILL,
+            "max_ratio": JOINT_LOAD_MAX_RATIO,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS, preserve_order=True),
         },
     )
 

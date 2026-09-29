@@ -716,6 +716,21 @@ def standing_joint_load_l1(
     return penalty
 
 
+def joint_load_rating_l2(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    rated: dict[str, float],
+    max_ratio: float = 5.0,
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    joint_ids = asset_cfg.joint_ids
+    names = asset.joint_names if isinstance(joint_ids, slice) else [asset.joint_names[i] for i in joint_ids]
+    torque = asset.data.applied_torque[:, joint_ids]
+    rating = torch.tensor([rated[n] for n in names], device=torque.device, dtype=torque.dtype)
+    ratio = torch.nan_to_num(torque.abs() / rating, nan=max_ratio, posinf=max_ratio, neginf=max_ratio)
+    return torch.sum(torch.square(torch.clamp(ratio, min=0.0, max=max_ratio)), dim=1)
+
+
 def unstable_joint_vel(
     env: ManagerBasedRLEnv, limit: float, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
 ) -> torch.Tensor:
