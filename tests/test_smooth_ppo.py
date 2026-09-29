@@ -510,5 +510,182 @@ def test_ver2_agent_cfg_uses_smooth_ppo_with_the_w92_default():
     algorithm = next(n for n in runner.body if isinstance(n, ast.Assign) and n.targets[0].id == "algorithm")
     assert algorithm.value.func.id == "SmoothPpoAlgorithmCfg"
     kwargs = {k.arg: ast.literal_eval(k.value) for k in algorithm.value.keywords if isinstance(k.value, ast.Constant)}
-    assert kwargs["hf_gyro_coef"] == 0.05
+    assert kwargs["hf_gyro_coef"] == 0.0
+    assert kwargs["hf_closed_loop"] is True
     assert kwargs["lcp_coef"] == 0.0
+
+
+def _closed_alg(policy, **extra):
+    return _alg(SMOOTH_PPO.SmoothPPO, policy, _Env(), hf_gyro_coef=0.05, hf_closed_loop=True, **extra)
+
+
+def _analytic_closed(weight, scales, damping=0.0):
+    total = 0.0
+    eye = torch.eye(weight.shape[0], dtype=torch.complex128)
+    for freq in FREQS:
+        b = torch.zeros(weight.shape[0], 3, dtype=torch.complex128)
+        a = torch.zeros(weight.shape[0], weight.shape[0], dtype=torch.complex128)
+        for k in range(HISTORY):
+            omega = 2.0 * math.pi * freq * DT
+            b = b + weight[:, 120 + 3 * k : 123 + 3 * k].to(torch.complex128) * complex(
+                math.cos(omega * (HISTORY - 1 - k)), -math.sin(omega * (HISTORY - 1 - k)))
+            a = a + weight[:, 175 + 12 * k : 187 + 12 * k].to(torch.complex128) * complex(
+                math.cos(omega * (HISTORY - k)), -math.sin(omega * (HISTORY - k)))
+        m = eye - a
+        if damping > 0.0:
+            t = torch.linalg.solve(m.mH @ m + damping**2 * eye, m.mH @ b)
+        else:
+            t = torch.linalg.inv(m) @ b
+        total += (scales.double()[:, None] * t).abs().square().sum().item()
+    return total
+
+
+def _linear_policy(weight, normalize=False):
+    policy = _policy()
+    policy.actor = torch.nn.Sequential(torch.nn.Linear(OBSERVATION_SIZE, len(JOINT_ORDER)))
+    with torch.no_grad():
+        policy.actor[0].weight.copy_(weight)
+        policy.actor[0].bias.normal_()
+        if normalize:
+            policy.actor_obs_normalizer._mean.normal_()
+            policy.actor_obs_normalizer._std.uniform_(0.2, 2.0)
+    return policy
+
+
+def test_closed_loop_resolves_the_last_action_history():
+    alg = _closed_alg(_policy())
+    assert alg.hf_slice == (120, 135)
+    assert alg.hf_action_slice == (175, 235)
+    assert alg.hf_history == HISTORY
+    assert SMOOTH_PPO.hf_phasors((25.0,), DT, HISTORY, 1)[0].real.tolist() == pytest.approx([-1, 1, -1, 1, -1])
+    assert SMOOTH_PPO.hf_phasors((25.0,), DT, HISTORY, 0)[0].real.tolist() == pytest.approx([1, -1, 1, -1, 1])
+
+
+@pytest.mark.parametrize("normalize", [False, True])
+@pytest.mark.parametrize("damping", [0.0, 0.05])
+def test_closed_loop_of_a_linear_policy_matches_the_analytic_transfer(normalize, damping):
+    torch.manual_seed(6)
+    weight = torch.randn(len(JOINT_ORDER), OBSERVATION_SIZE) * 0.1
+    weight[:, 175:235] *= 0.5
+    alg = _closed_alg(_linear_policy(weight, normalize), hf_damping=damping)
+    got = alg.hf_gyro_penalty_on(torch.randn(8, OBSERVATION_SIZE)).item()
+    norm = alg.policy.actor_obs_normalizer
+    raw = weight / (norm._std + norm.eps)
+    want = _analytic_closed(raw.double(), alg.hf_scales, damping)
+    assert got == pytest.approx(want, rel=1e-4)
+    assert got != pytest.approx(_analytic(raw, 120, alg.hf_scales), rel=1e-2)
+
+
+def test_closed_loop_equals_the_open_form_without_action_feedback():
+    torch.manual_seed(8)
+    weight = torch.randn(len(JOINT_ORDER), OBSERVATION_SIZE) * 0.1
+    weight[:, 175:235] = 0.0
+    x = torch.randn(16, OBSERVATION_SIZE)
+    closed = _closed_alg(_linear_policy(weight), hf_damping=0.0).hf_gyro_penalty_on(x).item()
+    opened = _linear_alg(weight).hf_gyro_penalty_on(x).item()
+    assert closed == pytest.approx(opened, rel=1e-4)
+
+    alg = _closed_alg(_policy(seed=4, hidden=(64, 64)), hf_damping=0.0)
+    with torch.no_grad():
+        alg.policy.actor[0].weight[:, 175:235] = 0.0
+    open_alg = _alg(SMOOTH_PPO.SmoothPPO, alg.policy, _Env(), hf_gyro_coef=0.05)
+    x = torch.randn(16, OBSERVATION_SIZE)
+    assert alg.hf_gyro_penalty_on(x).item() == pytest.approx(open_alg.hf_gyro_penalty_on(x).item(), rel=2e-3)
+
+
+def test_closed_loop_gradient_reaches_the_actor_parameters():
+    alg = _closed_alg(_policy(seed=9, hidden=(32, 32)))
+    x = torch.randn(8, OBSERVATION_SIZE)
+    alg.policy.zero_grad()
+    alg.hf_gyro_penalty_on(x).backward()
+    last_bias = f"actor.{len(alg.policy.actor) - 1}.bias"
+    grads = [(n, p.grad) for n, p in alg.policy.named_parameters() if n.startswith("actor.") and n != last_bias]
+    assert all(g is not None and torch.isfinite(g).all() and g.abs().sum() > 0 for _, g in grads)
+    assert dict(alg.policy.named_parameters())[last_bias].grad is None
+    assert all(p.grad is None or p.grad.abs().sum() == 0 for n, p in alg.policy.named_parameters()
+               if n.startswith("critic."))
+
+    param = alg.policy.actor[2].weight
+    direction = torch.randn_like(param)
+    analytic = (param.grad * direction).sum().item()
+    step = 1e-3
+    with torch.no_grad():
+        param += step * direction
+        plus = alg.hf_gyro_penalty_on(x).item()
+        param -= 2 * step * direction
+        minus = alg.hf_gyro_penalty_on(x).item()
+        param += step * direction
+    assert analytic == pytest.approx((plus - minus) / (2 * step), rel=2e-2)
+
+
+def test_closed_loop_penalty_is_mirror_invariant():
+    alg = _closed_alg(_policy(seed=7, hidden=(64, 64)), hf_damping=0.0)
+    layout = SYM._layout(_Env())
+    blocks, history = layout["groups"]["policy"]
+    perm = layout["perm"]
+
+    def mirror_obs(obs):
+        return SYM._mirror_group(obs, blocks, history, perm)
+
+    x = torch.randn(16, OBSERVATION_SIZE)
+    mirrored_x = mirror_obs(x)
+    torch.testing.assert_close(mirrored_x, _mirror_obs(x))
+
+    def mirrored_policy(obs):
+        return -alg.actor_mean(mirror_obs(obs))[..., perm]
+
+    def penalty(fn, obs):
+        return SMOOTH_PPO.hf_closed_loop_penalty(fn, obs, alg.hf_slice, alg.hf_action_slice, alg.hf_history,
+                                                 alg.hf_freqs, alg.step_dt, alg.hf_scales, alg.hf_damping)
+
+    torch.testing.assert_close(penalty(alg.actor_mean, mirrored_x), penalty(mirrored_policy, x), rtol=1e-4, atol=1e-7)
+
+    def symmetric_policy(obs):
+        return 0.5 * (alg.actor_mean(obs) + mirrored_policy(obs))
+
+    per_sample = torch.stack([penalty(symmetric_policy, x[i : i + 1]) for i in range(4)])
+    per_mirror = torch.stack([penalty(symmetric_policy, mirrored_x[i : i + 1]) for i in range(4)])
+    torch.testing.assert_close(per_sample, per_mirror, rtol=1e-4, atol=1e-7)
+
+
+def test_closed_loop_damping_bounds_a_singular_loop():
+    weight = torch.zeros(len(JOINT_ORDER), OBSERVATION_SIZE)
+    weight[:, 120] = 0.1
+    for k in range(HISTORY):
+        weight[:, 175 + 12 * k : 187 + 12 * k] = torch.eye(len(JOINT_ORDER)) * ((-1.0) ** (HISTORY - k)) / HISTORY
+    alg = _closed_alg(_linear_policy(weight), hf_damping=0.05)
+    norm = alg.policy.actor_obs_normalizer
+    raw = weight / (norm._std + norm.eps)
+    got = alg.hf_gyro_penalty_on(torch.randn(4, OBSERVATION_SIZE)).item()
+    assert math.isfinite(got)
+    assert got == pytest.approx(_analytic_closed(raw.double(), alg.hf_scales, 0.05), rel=1e-3)
+    b_gain = _analytic(raw, 120, alg.hf_scales)
+    assert got <= b_gain / (4 * 0.05**2) + 1e-9
+
+
+def test_closed_loop_update_logs_and_off_switch_is_bit_identical():
+    base = _policy(seed=3)
+    default = _alg(SMOOTH_PPO.SmoothPPO, copy.deepcopy(base), _Env(), hf_gyro_coef=0.05, hf_samples=8)
+    explicit = _alg(SMOOTH_PPO.SmoothPPO, copy.deepcopy(base), _Env(), hf_gyro_coef=0.05, hf_samples=8,
+                    hf_closed_loop=False, hf_damping=0.3, last_action_term="missing")
+    closed = _alg(SMOOTH_PPO.SmoothPPO, copy.deepcopy(base), _Env(), hf_gyro_coef=0.05, hf_samples=8,
+                  hf_closed_loop=True)
+    losses_default = _rollout_and_update(default, seed=11)
+    assert _rollout_and_update(explicit, seed=11) == losses_default
+    for (name, a), (_, b) in zip(default.policy.state_dict().items(), explicit.policy.state_dict().items()):
+        assert torch.equal(a, b), name
+    losses_closed = _rollout_and_update(closed, seed=11)
+    assert losses_closed["hf_gyro"] > 0 and math.isfinite(losses_closed["hf_gyro"])
+    assert losses_closed["hf_gyro"] != losses_default["hf_gyro"]
+
+
+def test_closed_loop_rejects_a_bad_action_history():
+    env = _Env()
+    env.observation_manager.active_terms["policy"][-1] = "last_act"
+    with pytest.raises(RuntimeError, match="not in the actor"):
+        _alg(SMOOTH_PPO.SmoothPPO, _policy(), env, hf_gyro_coef=0.05, hf_closed_loop=True)
+    with pytest.raises(RuntimeError, match="values per frame"):
+        _alg(SMOOTH_PPO.SmoothPPO, _policy(), _Env(), hf_gyro_coef=0.05, hf_closed_loop=True,
+             last_action_term="projected_gravity")
+    with pytest.raises(ValueError, match="non-negative"):
+        _alg(SMOOTH_PPO.SmoothPPO, _policy(), _Env(), hf_gyro_coef=0.05, hf_closed_loop=True, hf_damping=-0.1)

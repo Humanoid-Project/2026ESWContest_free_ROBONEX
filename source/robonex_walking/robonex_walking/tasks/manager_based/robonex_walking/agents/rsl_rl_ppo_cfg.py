@@ -26,6 +26,8 @@ class SmoothPpoAlgorithmCfg(RslRlPpoAlgorithmCfg):
     step_dt: float = 0.02
     hf_eps: float = 0.05
     hf_samples: int = 2048
+    hf_closed_loop: bool = False
+    hf_damping: float = 0.05
 
 
 @configclass
@@ -48,7 +50,8 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
     algorithm = SmoothPpoAlgorithmCfg(
-        hf_gyro_coef = 0.05,
+        hf_gyro_coef = 0.0,
+        hf_closed_loop = True,
         lcp_coef = 0.0,
         value_loss_coef = 1.0,
         use_clipped_value_loss = True,

@@ -14,8 +14,12 @@ from rsl_rl.algorithms import PPO
 __all__ = [
     "RSL_RL_VERSION",
     "SmoothPPO",
+    "closed_loop_transfer",
+    "hf_closed_loop_penalty",
     "hf_directions",
     "hf_gain_penalty",
+    "hf_phasors",
+    "input_jacobian",
     "resolve_action_scales",
     "resolve_obs_term_slice",
 ]
@@ -61,6 +65,41 @@ def hf_gain_penalty(mean_fn, obs: torch.Tensor, lo: int, hi: int, dirs: torch.Te
     plus, minus = mean_fn(rows).view(2, num, count, -1)
     gain = (plus - minus) / (2.0 * eps) * scales.to(plus)
     return gain.square().sum((1, 2)).mean()
+
+
+def hf_phasors(freqs: Sequence[float], step_dt: float, history: int, lag: int) -> torch.Tensor:
+    ages = torch.arange(history, dtype=torch.float64).flip(0) + lag
+    omega = 2.0 * math.pi * torch.tensor([float(f) for f in freqs], dtype=torch.float64) * step_dt
+    return torch.polar(torch.ones(len(freqs), history, dtype=torch.float64), -omega[:, None] * ages[None])
+
+
+def input_jacobian(mean_fn, obs: torch.Tensor) -> torch.Tensor:
+    return torch.func.vmap(torch.func.jacrev(lambda row: mean_fn(row[None])[0]))(obs)
+
+
+def closed_loop_transfer(jac: torch.Tensor, gyro: tuple[int, int], action: tuple[int, int], history: int,
+                         freqs: Sequence[float], step_dt: float, damping: float) -> torch.Tensor:
+    ctype = torch.complex128 if jac.dtype == torch.float64 else torch.complex64
+    jg = jac[..., gyro[0]:gyro[1]].unflatten(-1, (history, -1)).to(ctype)
+    ja = jac[..., action[0]:action[1]].unflatten(-1, (history, -1)).to(ctype)
+    if ja.shape[-1] != jac.shape[-2]:
+        raise RuntimeError(f"action history has {ja.shape[-1]} values per frame for {jac.shape[-2]} actions")
+    b = torch.einsum("njkc,fk->fnjc", jg, hf_phasors(freqs, step_dt, history, 0).to(ctype).to(jac.device))
+    a = torch.einsum("njkc,fk->fnjc", ja, hf_phasors(freqs, step_dt, history, 1).to(ctype).to(jac.device))
+    eye = torch.eye(a.shape[-1], dtype=ctype, device=jac.device)
+    m = eye - a
+    if damping > 0.0:
+        mh = m.mH
+        return torch.linalg.solve(mh @ m + damping**2 * eye, mh @ b)
+    return torch.linalg.solve(m, b)
+
+
+def hf_closed_loop_penalty(mean_fn, obs: torch.Tensor, gyro: tuple[int, int], action: tuple[int, int], history: int,
+                           freqs: Sequence[float], step_dt: float, scales: torch.Tensor,
+                           damping: float) -> torch.Tensor:
+    transfer = closed_loop_transfer(input_jacobian(mean_fn, obs), gyro, action, history, freqs, step_dt, damping)
+    gain = transfer * scales.to(obs)[:, None]
+    return (gain.real.square() + gain.imag.square()).sum((0, 2, 3)).mean()
 
 
 def resolve_obs_term_slice(manager, groups: Sequence[str], term: str) -> tuple[int, int, int, int]:
@@ -135,8 +174,11 @@ class SmoothPPO(PPO):
         step_dt: float = 0.02,
         hf_eps: float = 0.05,
         hf_samples: int = 2048,
+        hf_closed_loop: bool = False,
+        hf_damping: float = 0.05,
         gyro_term: str = "imu_ang_vel",
         action_term: str = "joint_pos",
+        last_action_term: str = "actions",
         **kwargs,
     ) -> None:
         check_rsl_rl_version()
@@ -148,14 +190,19 @@ class SmoothPPO(PPO):
         self.step_dt = float(step_dt)
         self.hf_eps = float(hf_eps)
         self.hf_samples = int(hf_samples)
+        self.hf_closed_loop = bool(hf_closed_loop)
+        self.hf_damping = float(hf_damping)
         self.gyro_term = gyro_term
         self.action_term = action_term
+        self.last_action_term = last_action_term
         self.hf_slice = None
+        self.hf_action_slice = None
+        self.hf_history = None
         self.hf_dirs = None
         self.hf_scales = None
         self.hf_generator = None
-        if self.hf_gyro_coef < 0.0 or self.lcp_coef < 0.0:
-            raise ValueError("hf_gyro_coef and lcp_coef must be non-negative")
+        if self.hf_gyro_coef < 0.0 or self.lcp_coef < 0.0 or self.hf_damping < 0.0:
+            raise ValueError("hf_gyro_coef, lcp_coef and hf_damping must be non-negative")
         if (self.hf_gyro_coef > 0.0 or self.lcp_coef > 0.0) and self.policy.is_recurrent:
             raise ValueError("SmoothPPO penalties support feed-forward policies only")
         if self.hf_gyro_coef > 0.0:
@@ -183,7 +230,25 @@ class SmoothPPO(PPO):
             num_actions = self._actor_mean_normalized(torch.zeros(1, width, device=self.device)).shape[-1]
         if scales.numel() != num_actions:
             raise RuntimeError(f"{scales.numel()} action scales for {num_actions} actions")
+        form = "open loop"
+        if self.hf_closed_loop:
+            a_lo, a_hi, a_history, a_width = resolve_obs_term_slice(
+                unwrapped.observation_manager, groups, self.last_action_term
+            )
+            if a_width != width or a_history != history:
+                raise RuntimeError(
+                    f"term {self.last_action_term!r} has history {a_history} in a {a_width}-wide input, "
+                    f"expected history {history} in {width}"
+                )
+            if (a_hi - a_lo) != history * num_actions:
+                raise RuntimeError(
+                    f"term {self.last_action_term!r} has {(a_hi - a_lo) // history} values per frame, "
+                    f"expected {num_actions}"
+                )
+            self.hf_action_slice = (a_lo, a_hi)
+            form = f"closed loop through '{self.last_action_term}' at {a_lo}:{a_hi} (damping {self.hf_damping})"
         self.hf_slice = (lo, hi)
+        self.hf_history = history
         self.hf_dirs = hf_directions(self.hf_freqs, self.step_dt, history, axes).to(self.device)
         self.hf_scales = scales.to(self.device)
         self.hf_generator = torch.Generator(device=self.device)
@@ -191,7 +256,7 @@ class SmoothPPO(PPO):
         print(
             f"[SmoothPPO] hf_gyro coef {self.hf_gyro_coef}: '{self.gyro_term}' at actor inputs {lo}:{hi} "
             f"({history} frames x {axes}, oldest first), {self.hf_dirs.shape[0]} directions at {self.hf_freqs} Hz, "
-            f"scales {[round(v, 6) for v in self.hf_scales.tolist()]}",
+            f"{form}, scales {[round(v, 6) for v in self.hf_scales.tolist()]}",
             flush=True,
         )
 
@@ -205,6 +270,9 @@ class SmoothPPO(PPO):
         return self._actor_mean_normalized(self.policy.actor_obs_normalizer(obs))
 
     def hf_gyro_penalty_on(self, obs: torch.Tensor) -> torch.Tensor:
+        if self.hf_closed_loop:
+            return hf_closed_loop_penalty(self.actor_mean, obs, self.hf_slice, self.hf_action_slice, self.hf_history,
+                                          self.hf_freqs, self.step_dt, self.hf_scales, self.hf_damping)
         lo, hi = self.hf_slice
         return hf_gain_penalty(self.actor_mean, obs, lo, hi, self.hf_dirs, self.hf_eps, self.hf_scales)
 
