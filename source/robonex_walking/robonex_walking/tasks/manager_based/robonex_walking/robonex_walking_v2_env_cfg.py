@@ -68,6 +68,7 @@ CONTACT_FORCE_LIMIT_BW = 1.4907465107993398
 
 PHYSICS_HZ = 400
 DECIMATION = 8
+IMU_DELAY_STEPS = (0, 0)
 POSITION_ITERATIONS = 32
 DEPLOY_MAX_SPEED = 6.0
 DEPLOY_MAX_ACCEL = 120.0
@@ -151,7 +152,7 @@ class RoboNexWalkingSceneCfg(InteractiveSceneCfg):
     )
 
     # IMU
-    imu = ImuCfg(
+    imu = mdp.DelayedImuCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link",
         offset=ImuCfg.OffsetCfg(
             pos=(0.060, 0.0, 0.035),
@@ -160,6 +161,8 @@ class RoboNexWalkingSceneCfg(InteractiveSceneCfg):
         update_period=0.0,
         history_length=1,
         debug_vis=False,
+        min_delay_steps=IMU_DELAY_STEPS[0],
+        max_delay_steps=IMU_DELAY_STEPS[1],
     )
 
     # Contact sensors
@@ -246,7 +249,7 @@ class ObservationsCfg:
 
         # IMU angular velocity (3) (rad/s)
         imu_ang_vel = ObsTerm(
-            func=mdp.imu_ang_vel,
+            func=mdp.delayed_imu_ang_vel,
             params={"asset_cfg": SceneEntityCfg("imu")},
             noise=NoiseModelWithAdditiveBiasCfg(
                 noise_cfg=GaussianNoiseCfg(mean=0.0, std=0.1),
@@ -255,7 +258,8 @@ class ObservationsCfg:
         )
         # Projected gravity (3)
         projected_gravity = ObsTerm(
-            func=mdp.projected_gravity,
+            func=mdp.delayed_imu_projected_gravity,
+            params={"asset_cfg": SceneEntityCfg("imu")},
             noise=GaussianNoiseCfg(mean=0.0, std=0.025),
         )
 

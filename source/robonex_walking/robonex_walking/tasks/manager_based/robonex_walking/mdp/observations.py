@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.managers import ManagerTermBase
+from isaaclab.sensors import Imu, ImuCfg
+from isaaclab.utils import configclass
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -80,3 +82,70 @@ class delayed_joint_state(ManagerTermBase):
         if torch.any(fresh):
             self._frames[:, fresh] = current[fresh]
         return self._frames[self._delay, torch.arange(current.shape[0], device=current.device)]
+
+
+class DelayedImu(Imu):
+    def _initialize_impl(self):
+        super()._initialize_impl()
+        if not 0 <= self.cfg.min_delay_steps <= self.cfg.max_delay_steps:
+            raise ValueError(
+                f"imu delay steps must satisfy 0 <= min <= max, got {self.cfg.min_delay_steps}..{self.cfg.max_delay_steps}"
+            )
+        slots = self.cfg.max_delay_steps + 1
+        self._ring_w = torch.zeros(slots, self._num_envs, 3, device=self._device)
+        self._ring_g = torch.zeros(slots, self._num_envs, 3, device=self._device)
+        self._ring_g[..., 2] = -1.0
+        self._head = 0
+        self._fresh = torch.ones(self._num_envs, dtype=torch.bool, device=self._device)
+        self._delay = self._draw(self._num_envs)
+        self._envs = torch.arange(self._num_envs, device=self._device)
+
+    def _draw(self, count):
+        return torch.randint(self.cfg.min_delay_steps, self.cfg.max_delay_steps + 1, (count,), device=self._device)
+
+    def update(self, dt, force_recompute=False):
+        self._head = (self._head + 1) % self._ring_w.shape[0]
+        super().update(dt, force_recompute)
+
+    def reset(self, env_ids=None):
+        super().reset(env_ids)
+        if env_ids is None:
+            env_ids = slice(None)
+            count = self._num_envs
+        else:
+            count = len(env_ids)
+        self._fresh[env_ids] = True
+        self._delay[env_ids] = self._draw(count)
+
+    def _update_buffers_impl(self, env_ids):
+        super()._update_buffers_impl(env_ids)
+        ang_vel = self._data.ang_vel_b[env_ids]
+        gravity = self._data.projected_gravity_b[env_ids]
+        self._ring_w[self._head, env_ids] = ang_vel
+        self._ring_g[self._head, env_ids] = gravity
+        fresh = torch.zeros_like(self._fresh)
+        fresh[env_ids] = self._fresh[env_ids]
+        if torch.any(fresh):
+            self._ring_w[:, fresh] = self._data.ang_vel_b[fresh]
+            self._ring_g[:, fresh] = self._data.projected_gravity_b[fresh]
+            self._fresh[fresh] = False
+
+    def delayed(self):
+        self._update_outdated_buffers()
+        index = (self._head - self._delay) % self._ring_w.shape[0]
+        return self._ring_w[index, self._envs], self._ring_g[index, self._envs]
+
+
+@configclass
+class DelayedImuCfg(ImuCfg):
+    class_type: type = DelayedImu
+    min_delay_steps: int = 0
+    max_delay_steps: int = 0
+
+
+def delayed_imu_ang_vel(env: ManagerBasedRLEnv, asset_cfg) -> torch.Tensor:
+    return env.scene[asset_cfg.name].delayed()[0]
+
+
+def delayed_imu_projected_gravity(env: ManagerBasedRLEnv, asset_cfg) -> torch.Tensor:
+    return env.scene[asset_cfg.name].delayed()[1]
