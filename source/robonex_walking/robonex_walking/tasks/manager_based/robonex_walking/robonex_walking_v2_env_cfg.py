@@ -37,6 +37,7 @@ from .robot_contract_v2 import (
     FOOT_ROLL_PAIRS,
     FOOT_SOLE_CORNERS,
     LEG_JOINTS,
+    MOTOR_MODEL_BY_JOINT,
     RATED_TORQUE_SPINNING,
     RATED_TORQUE_STANDSTILL,
     STANCE_WIDTH_DEFAULT,
@@ -86,6 +87,9 @@ STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
 ACTION_SMOOTHNESS_WEIGHT = -1.0
 ACTION_SMOOTHNESS_SECOND_ORDER = 0.0
 ACTION_SMOOTHNESS_RAMP = (0.2, 300 * 24)
+JOINT_OBS_MAX_DELAY_STEPS = 1
+JOINT_FRICTION_RANGE = {"rs02": (0.05, 0.25), "rs03": (0.2, 0.8)}
+JOINT_STATIC_FRICTION_RATIO = 1.0
 
 
 @configclass
@@ -232,8 +236,12 @@ class ObservationsCfg:
 
         # Joint Position (12) (rad)
         joint_pos_rel = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS)},
+            func=mdp.delayed_joint_state,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
+                "field": "pos",
+                "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
+            },
             # G1 uses Unoise(-0.01, 0.01); a uniform half-width of h has std h/sqrt(3).
             # 0.01 was that half-width copied straight into a Gaussian std field, which
             # made this the only observation louder than G1 (1.73x) while the other three
@@ -242,8 +250,12 @@ class ObservationsCfg:
         )
         # Joint Velocity (12) (rad/s)
         joint_vel_rel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS)},
+            func=mdp.delayed_joint_state,
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
+                "field": "vel",
+                "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
+            },
             noise=GaussianNoiseCfg(mean=0.0, std=0.75),
         )
 
@@ -367,13 +379,13 @@ class EventCfg:
 
     # Randomization joint friction
     randomize_joint_friction = EventTerm(
-        func=mdp.randomize_joint_parameters,
+        func=mdp.randomize_joint_coulomb_friction,
         mode="reset",
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
-            "friction_distribution_params": (0.0, 0.02),
-            "operation": "add",
-            "distribution": "uniform",
+            "friction_range": {name: JOINT_FRICTION_RANGE[model] for name, model in MOTOR_MODEL_BY_JOINT.items()},
+            "static_ratio": JOINT_STATIC_FRICTION_RATIO,
+            "viscous": 0.0,
         },
     )
 

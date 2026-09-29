@@ -30,6 +30,7 @@ def apply_training_env_cfg(env_cfg, checkpoint):
         saved = yaml.load(handle, Loader=_SavedCfgLoader)
     for key in ("viewer", "log_dir", "seed"):
         saved.pop(key, None)
+    _add_trained_params(env_cfg, saved)
     update_class_from_dict(env_cfg, saved)
     remap_moved_usd(env_cfg)
     for manager in ("events", "rewards", "terminations", "curriculum"):
@@ -58,6 +59,46 @@ def _drop_untrained_params(term, trained):
         return
     for key in [k for k in params if k not in trained["params"]]:
         del params[key]
+
+
+def _add_trained_params(env_cfg, saved):
+    for manager in ("events", "rewards", "terminations", "curriculum"):
+        section = getattr(env_cfg, manager, None)
+        for name, trained in (saved.get(manager) or {}).items():
+            params = getattr(getattr(section, name, None), "params", None)
+            if not isinstance(params, dict) or not isinstance(trained, dict) or not isinstance(trained.get("params"), dict):
+                continue
+            for key, value in trained["params"].items():
+                if key not in params:
+                    params[key] = _trained_value(value)
+
+
+def _trained_value(value):
+    if isinstance(value, dict) and "name" in value and ("joint_names" in value or "body_names" in value):
+        from isaaclab.managers import SceneEntityCfg
+
+        return SceneEntityCfg(name=value["name"])
+    if isinstance(value, dict):
+        return {k: _trained_value(v) for k, v in value.items()}
+    return value
+
+
+def pin_joint_friction(env_cfg, levels, func):
+    from robonex_common.joints import ACTUATED_JOINTS
+
+    term = getattr(env_cfg.events, "randomize_joint_friction", None)
+    if term is None:
+        raise KeyError("the env has no randomize_joint_friction event to pin")
+    if set(levels) != {joint.motor_model for joint in ACTUATED_JOINTS} or min(levels.values()) < 0.0:
+        raise ValueError(f"joint friction needs one non-negative N*m level per motor model: {levels}")
+    term.func = func
+    term.params = {
+        "asset_cfg": term.params["asset_cfg"],
+        "friction_range": {joint.model_name: (levels[joint.motor_model],) * 2 for joint in ACTUATED_JOINTS},
+        "static_ratio": 1.0,
+        "viscous": 0.0,
+    }
+    return {model: float(level) for model, level in sorted(levels.items())}
 
 
 MOVED_DESCRIPTION_PATHS = (
@@ -159,6 +200,23 @@ def install_joint_obs_delay(unwrapped, steps=1, group="policy", names=("joint_po
     if missing:
         raise KeyError(f"observation terms not found in group {group!r}: {sorted(missing)}")
     return wrapped
+
+
+def pin_joint_obs_delay(unwrapped, steps, group="policy"):
+    manager = unwrapped.observation_manager
+    pinned = []
+    for name, term_cfg in zip(manager._group_obs_term_names[group], manager._group_obs_term_cfgs[group]):
+        term = term_cfg.func
+        if not hasattr(term, "_max_delay"):
+            continue
+        if not 0 <= steps <= term._max_delay:
+            raise ValueError(f"{name} keeps {term._max_delay} delayed frame(s); cannot pin a delay of {steps}")
+        term._delay.fill_(steps)
+        term.reset = lambda env_ids=None, term=term: term._delay.fill_(steps)
+        pinned.append(name)
+    if not pinned:
+        raise KeyError(f"no observation term in group {group!r} is delayed by training; use install_joint_obs_delay")
+    return pinned
 
 
 def _delayed(func, steps):

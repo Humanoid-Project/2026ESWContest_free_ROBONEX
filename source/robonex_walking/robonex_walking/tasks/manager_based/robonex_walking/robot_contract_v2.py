@@ -41,6 +41,7 @@ LEG_JOINTS = tuple(joint.model_name for joint in ACTUATED_JOINTS)
 _RATED_SPINNING = {"rs02": 7.0, "rs03": 20.0}
 RATED_TORQUE_STANDSTILL = {joint.model_name: RATED_TORQUE[joint.motor_model] for joint in ACTUATED_JOINTS}
 RATED_TORQUE_SPINNING = {joint.model_name: _RATED_SPINNING[joint.motor_model] for joint in ACTUATED_JOINTS}
+MOTOR_MODEL_BY_JOINT = {joint.model_name: joint.motor_model for joint in ACTUATED_JOINTS}
 
 
 def _isaac_passive_name(name):
@@ -96,6 +97,7 @@ __all__ = [
     "HIP_PITCH_HEIGHT",
     "JOINT_LIMITS",
     "LEG_JOINTS",
+    "MOTOR_MODEL_BY_JOINT",
     "RATED_TORQUE_SPINNING",
     "RATED_TORQUE_STANDSTILL",
     "STANCE_WIDTH_DEFAULT",

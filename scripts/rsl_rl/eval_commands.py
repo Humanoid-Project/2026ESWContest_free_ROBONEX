@@ -26,6 +26,10 @@ parser.add_argument("--no_push", action="store_true",
                     help="Disable the push events (push_robot, push_standing) for a like-for-like comparison across runs")
 parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
+parser.add_argument("--obs_delay_pin", type=int, default=-1,
+                    help="For a policy trained with a random joint observation delay: fix that delay at N steps for every env")
+parser.add_argument("--joint_friction", type=float, nargs=2, default=None, metavar=("RS02", "RS03"),
+                    help="Fix the Coulomb joint friction (N*m, static = dynamic, no viscous) on every env and reset")
 parser.add_argument("--deploy_overspeed", type=float, default=10.0,
                     help="Deploy stop: actuated joint speed above this (rad/s)")
 parser.add_argument("--deploy_max_error_deg", type=float, default=25.0,
@@ -47,9 +51,16 @@ import torch
 from rsl_rl.runners import OnPolicyRunner
 
 import robonex_walking.tasks  # noqa: F401
-from deploy_effects import apply_training_env_cfg, install_joint_obs_delay, install_slew_limiter
+from deploy_effects import (
+    apply_training_env_cfg,
+    install_joint_obs_delay,
+    install_slew_limiter,
+    pin_joint_friction,
+    pin_joint_obs_delay,
+)
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
+from robonex_walking.tasks.manager_based.robonex_walking.mdp.events import randomize_joint_coulomb_friction
 from robonex_walking.tasks.manager_based.robonex_walking.mdp.walk_metrics import WalkMetrics
 
 CELLS = {
@@ -314,6 +325,10 @@ def main():
             if getattr(env_cfg.events, name, None) is not None:
                 setattr(env_cfg.events, name, None)
                 pushes_disabled.append(name)
+    friction_pinned = None
+    if args_cli.joint_friction is not None:
+        levels = dict(zip(("rs02", "rs03"), args_cli.joint_friction))
+        friction_pinned = pin_joint_friction(env_cfg, levels, randomize_joint_coulomb_friction)
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
 
     # never resample or zero a command: the harness drives it directly
@@ -330,6 +345,7 @@ def main():
     if args_cli.slew_limit:
         install_slew_limiter(unwrapped)
     obs_delayed = install_joint_obs_delay(unwrapped, args_cli.obs_delay) if args_cli.obs_delay else []
+    obs_pinned = pin_joint_obs_delay(unwrapped, args_cli.obs_delay_pin) if args_cli.obs_delay_pin >= 0 else []
     term = unwrapped.command_manager.get_term("base_velocity")
     forced = torch.zeros(unwrapped.num_envs, 3, device=unwrapped.device)
     term._resample_command = lambda env_ids: None
@@ -372,7 +388,10 @@ def main():
             "slew_limit": bool(args_cli.slew_limit),
             "obs_delay_steps": int(args_cli.obs_delay),
             "obs_delay_terms": obs_delayed,
+            "obs_delay_pin": int(args_cli.obs_delay_pin),
+            "obs_delay_pinned_terms": obs_pinned,
             "pushes_disabled": pushes_disabled,
+            "joint_friction_pin_nm": friction_pinned,
         },
         "joint_order": joint_names,
         "action_scale": {n: float(act_scale[0, i]) for i, n in enumerate(joint_names)},
