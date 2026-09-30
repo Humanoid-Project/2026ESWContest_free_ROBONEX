@@ -65,8 +65,9 @@ class WiringTest(unittest.TestCase):
             self.assertEqual(ast.literal_eval(params["field"]), field)
             self.assertEqual(ast.unparse(params["max_delay_steps"]), "JOINT_OBS_MAX_DELAY_STEPS")
             self.assertIn("LEG_JOINTS", ast.unparse(params["asset_cfg"]))
-        self.assertEqual(ast.unparse(terms["imu_ang_vel"]["func"]), "mdp.imu_ang_vel")
-        self.assertEqual(constant("JOINT_OBS_MAX_DELAY_STEPS"), 1)
+        self.assertEqual(ast.unparse(terms["imu_ang_vel"]["func"]), "mdp.delayed_imu_ang_vel")
+        self.assertEqual(ast.unparse(terms["projected_gravity"]["func"]), "mdp.delayed_imu_projected_gravity")
+        self.assertEqual(constant("JOINT_OBS_MAX_DELAY_STEPS"), 0)
 
     def test_critic_keeps_the_undelayed_state(self):
         critic = obs_terms("CriticCfg")
