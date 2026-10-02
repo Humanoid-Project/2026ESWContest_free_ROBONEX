@@ -77,7 +77,8 @@ def main():
         print(f"[trace] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
         env_cfg.scene.num_envs = args_cli.num_envs
     if not args_cli.keep_randomization:
-        print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg)}")
+        com_kept = (BASE_COM_EVENT,) if args_cli.com_keep_training or args_cli.com_pin is not None else ()
+        print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg, com_kept)}")
     for item in args_cli.set:
         path, value = item.split("=", 1)
         *parents, leaf = path.split(".")
@@ -93,7 +94,8 @@ def main():
                 raise AttributeError(f"--set {path}: no attribute {leaf!r}")
             setattr(node, leaf, float(value))
         print(f"[trace] set {path} = {float(value)}")
-    print(f"[trace] base CoM: {apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)}")
+    base_com = apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)
+    print(f"[trace] base CoM: {base_com}")
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)
@@ -284,6 +286,7 @@ def main():
         "obs_delay_pin": int(args_cli.obs_delay_pin),
         "obs_delay_pinned_terms": obs_pinned,
         "delays": summarize_delay_states(delay_states),
+        "base_com": base_com,
     }
     meta_path = out + ".meta.json"
     with open(meta_path + ".partial", "w", encoding="utf-8") as handle:

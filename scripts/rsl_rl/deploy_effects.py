@@ -158,12 +158,12 @@ def remap_moved_usd(env_cfg):
     raise FileNotFoundError(f"saved usd_path {path} does not exist and has no known new location")
 
 
-def disable_randomization(env_cfg):
+def disable_randomization(env_cfg, keep=()):
     kept = []
     for name in list(vars(env_cfg.events)):
         if name.startswith("_"):
             continue
-        if name.startswith("reset_"):
+        if name.startswith("reset_") or (name in keep and getattr(env_cfg.events, name) is not None):
             kept.append(name)
         else:
             setattr(env_cfg.events, name, None)
