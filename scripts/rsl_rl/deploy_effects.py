@@ -223,6 +223,29 @@ def install_slew_limiter(unwrapped, max_speed=DEPLOY_MAX_SPEED, max_accel=DEPLOY
     return state
 
 
+def effective_action_config(term, cli_slew_limit=False):
+    cfg = getattr(term, "cfg", None)
+    stage = hasattr(term, "_slew_position") and bool(getattr(cfg, "slew_enabled", True))
+    if stage:
+        source, speed, accel = "action_term", float(cfg.max_speed), float(cfg.max_accel)
+    elif cli_slew_limit:
+        source, speed, accel = "eval_limiter", DEPLOY_MAX_SPEED, DEPLOY_MAX_ACCEL
+    else:
+        source, speed, accel = None, None, None
+    roll_limit = getattr(cfg, "foot_roll_limit", None)
+    roll_limit = None if roll_limit is None else float(roll_limit)
+    return {
+        "action_class": type(term).__name__,
+        "slew_enabled": source is not None,
+        "slew_source": source,
+        "slew_max_speed": speed,
+        "slew_max_accel": accel,
+        "foot_roll_limit": roll_limit,
+        "foot_roll_projection": bool(roll_limit and getattr(term, "_roll_pairs", None)),
+        "cli_slew_limit": bool(cli_slew_limit),
+    }
+
+
 def install_joint_obs_delay(unwrapped, steps=1, group="policy", names=("joint_pos_rel", "joint_vel_rel")):
     manager = unwrapped.observation_manager
     term_names = manager._group_obs_term_names[group]

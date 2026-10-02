@@ -60,6 +60,7 @@ from deploy_effects import (
     BASE_COM_EVENT,
     apply_base_com_pin,
     apply_training_env_cfg,
+    effective_action_config,
     install_joint_obs_delay,
     install_slew_limiter,
     pin_joint_friction,
@@ -68,6 +69,7 @@ from deploy_effects import (
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 from robonex_walking.tasks.manager_based.robonex_walking.mdp.events import randomize_joint_coulomb_friction
+from robonex_walking.tasks.manager_based.robonex_walking.mdp.tracking import sent_tracking_error
 from robonex_walking.tasks.manager_based.robonex_walking.mdp.walk_metrics import WalkMetrics
 
 CELLS = {
@@ -404,6 +406,8 @@ def main():
             "joint_friction_pin_nm": friction_pinned,
             "base_com": base_com,
         },
+        "action_effective": effective_action_config(action_term, args_cli.slew_limit),
+        "tracking_error_kernel": "wrapped_abs",
         "joint_order": joint_names,
         "action_scale": {n: float(act_scale[0, i]) for i, n in enumerate(joint_names)},
         "action_offset": {n: float(act_offset[0, i]) for i, n in enumerate(joint_names)},
@@ -534,7 +538,7 @@ def main():
             alive = ~step_failed
             q = robot.data.joint_pos[:, joint_ids]
             speed = robot.data.joint_vel[:, joint_ids].abs().amax(dim=1)
-            error = (robot.data.joint_pos_target[:, joint_ids] - q).abs().amax(dim=1)
+            error = sent_tracking_error(robot.data.joint_pos_target[:, joint_ids], q).amax(dim=1)
             gravity = robot.data.projected_gravity_b
             tilt = torch.acos(torch.clamp(-gravity[:, 2] / gravity.norm(dim=1).clamp(min=1e-6), -1.0, 1.0))
             conditions = {

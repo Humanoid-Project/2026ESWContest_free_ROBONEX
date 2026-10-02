@@ -15,6 +15,8 @@ from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, wrap_to_pi, yaw_quat
 
+from .tracking import sent_tracking_error
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -646,6 +648,16 @@ def foot_roll_clip_excess_l2(env: ManagerBasedRLEnv, scale: float = 0.01, term_n
     if excess is None:
         return torch.zeros(env.num_envs, device=env.device)
     return _saturate(torch.nan_to_num(excess, nan=scale, posinf=scale, neginf=0.0), scale)
+
+
+def sent_tracking_excess_l2(
+    env: ManagerBasedRLEnv, floor_deg: float = 20.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    joint_ids = asset_cfg.joint_ids
+    error = sent_tracking_error(asset.data.joint_pos_target[:, joint_ids], asset.data.joint_pos[:, joint_ids])
+    excess = torch.clamp(error - math.radians(floor_deg), min=0.0)
+    return torch.sum(torch.square(excess), dim=1)
 
 
 def both_feet_off_ground(

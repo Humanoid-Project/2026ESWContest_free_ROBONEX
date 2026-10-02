@@ -83,6 +83,8 @@ STANDING_HIP_ROLL_LOAD_WEIGHT = -0.2
 HIP_ROLL_LOAD_REFERENCE = 20.0
 JOINT_LOAD_WEIGHT = 0.0
 JOINT_LOAD_MAX_RATIO = 5.0
+SENT_TRACKING_EXCESS_WEIGHT = 0.0
+SENT_TRACKING_EXCESS_FLOOR_DEG = 20.0
 RECOVERY_GATE = (0.20, 0.08, 0.2, 1.5)
 STANDING_PUSH_SPEED = 0.5
 STANDING_PUSH_INTERVAL_S = (4.0, 8.0)
@@ -633,6 +635,14 @@ class RewardsCfg:
         params={
             "rated": RATED_TORQUE_STANDSTILL,
             "max_ratio": JOINT_LOAD_MAX_RATIO,
+            "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS, preserve_order=True),
+        },
+    )
+    sent_tracking_excess = RewTerm(
+        func=mdp.sent_tracking_excess_l2,
+        weight=SENT_TRACKING_EXCESS_WEIGHT,
+        params={
+            "floor_deg": SENT_TRACKING_EXCESS_FLOOR_DEG,
             "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS, preserve_order=True),
         },
     )

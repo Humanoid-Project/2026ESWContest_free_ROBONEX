@@ -154,6 +154,21 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
                 self.unwrapped.step_dt,
                 sole_corners=cfg.foot_sole_corners,
             )
+        self.sent_tracking = None
+        terminations = getattr(self.unwrapped, "termination_manager", None)
+        if scene is not None and terminations is not None:
+            from robonex_walking.tasks.manager_based.robonex_walking.mdp.tracking import (
+                SentTrackingMetrics,
+            )
+            self.sent_tracking = SentTrackingMetrics(scene["robot"], term._joint_ids, term._joint_names)
+            compute = terminations.compute
+
+            def compute_and_sample():
+                result = compute()
+                self.sent_tracking.sample()
+                return result
+
+            terminations.compute = compute_and_sample
 
     def step(self, actions):
         with torch.no_grad():
@@ -234,6 +249,8 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
             values["Policy/foot_roll_slew_clip_fraction/r"] = roll[3]
         if self.walk_metrics is not None:
             values.update(self.walk_metrics.take_log())
+        if self.sent_tracking is not None:
+            values.update(self.sent_tracking.take_log())
         return values
 
 
