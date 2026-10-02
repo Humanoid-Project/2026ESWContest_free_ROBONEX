@@ -1,7 +1,7 @@
 import torch
 
 from isaaclab.assets import Articulation
-from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.version import get_isaac_sim_version
 
 
@@ -77,3 +77,42 @@ def randomize_joint_coulomb_friction(
         joint_ids=torch.tensor(joint_ids, dtype=torch.int, device=asset.device),
         env_ids=env_ids,
     )
+
+
+class randomize_rigid_body_com_offset(ManagerTermBase):
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.nominal_coms = None
+
+    def __call__(
+        self,
+        env,
+        env_ids: torch.Tensor | None,
+        asset_cfg: SceneEntityCfg,
+        com_range: dict[str, tuple[float, float]],
+    ):
+        low = torch.tensor([float(com_range.get(key, (0.0, 0.0))[0]) for key in "xyz"])
+        high = torch.tensor([float(com_range.get(key, (0.0, 0.0))[1]) for key in "xyz"])
+        if bool(torch.any(high < low)):
+            raise ValueError(f"com_range upper bound below lower bound: {com_range}")
+        if self.nominal_coms is None and not bool(torch.any(low != 0.0) or torch.any(high != 0.0)):
+            return
+        asset: Articulation = env.scene[asset_cfg.name]
+        if self.nominal_coms is None:
+            self.nominal_coms = asset.root_physx_view.get_coms().clone()
+        if env_ids is None:
+            env_ids = torch.arange(env.scene.num_envs, device="cpu")
+        else:
+            env_ids = env_ids.cpu()
+        body_ids = asset_cfg.body_ids
+        if isinstance(body_ids, slice):
+            body_ids = list(range(asset.num_bodies))[body_ids]
+        body_ids = torch.tensor(body_ids, dtype=torch.long, device="cpu")
+        offset = low.expand(len(env_ids), 1, 3).clone()
+        if bool(torch.any(high > low)):
+            offset += (high - low) * torch.rand(len(env_ids), 1, 3)
+        coms = asset.root_physx_view.get_coms().clone()
+        rows = env_ids[:, None]
+        coms[rows, body_ids] = self.nominal_coms[rows, body_ids]
+        coms[rows, body_ids, :3] += offset.to(coms.dtype)
+        asset.root_physx_view.set_coms(coms, env_ids)
