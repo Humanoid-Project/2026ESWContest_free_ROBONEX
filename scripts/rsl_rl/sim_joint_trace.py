@@ -5,6 +5,7 @@ Written so a sim run and a `policy_to_real.py --telemetry` run can go through on
 
 import argparse
 import csv
+import json
 import os
 
 from isaaclab.app import AppLauncher
@@ -34,6 +35,8 @@ parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE",
                     help="Override a float in the env config, e.g. scene.robot.actuators.rs02.stiffness.l_hip_yaw_joint=25")
 parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
+parser.add_argument("--obs_delay_pin", type=int, default=-1,
+                    help="For a policy trained with a random joint observation delay: fix that delay at N steps for every env")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.headless = True
@@ -52,6 +55,9 @@ from deploy_effects import (
     disable_randomization,
     install_joint_obs_delay,
     install_slew_limiter,
+    observation_delay_state,
+    pin_joint_obs_delay,
+    summarize_delay_states,
 )
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
@@ -96,8 +102,12 @@ def main():
     if args_cli.slew_limit:
         install_slew_limiter(unwrapped)
         print("[trace] deploy slew limiter on joint targets")
-    if args_cli.obs_delay:
-        print(f"[trace] observation delay {args_cli.obs_delay} step(s) on {install_joint_obs_delay(unwrapped, args_cli.obs_delay)}")
+    obs_delayed = install_joint_obs_delay(unwrapped, args_cli.obs_delay) if args_cli.obs_delay else []
+    if obs_delayed:
+        print(f"[trace] observation delay {args_cli.obs_delay} step(s) on {obs_delayed}")
+    obs_pinned = pin_joint_obs_delay(unwrapped, args_cli.obs_delay_pin) if args_cli.obs_delay_pin >= 0 else []
+    if obs_pinned:
+        print(f"[trace] joint observation delay pinned at {args_cli.obs_delay_pin} step(s) on {obs_pinned}")
     term = unwrapped.command_manager.get_term("base_velocity")
     schedule = [(0.0, (args_cli.vx, args_cli.vy, args_cli.wz))]
     if args_cli.scenario:
@@ -176,6 +186,7 @@ def main():
     idx = args_cli.env_index
     dt = float(unwrapped.step_dt)
     rows = []
+    delay_states = []
     obs = env.get_observations()
     with torch.inference_mode():
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
@@ -187,6 +198,7 @@ def main():
             if step < args_cli.warmup_steps:
                 continue
             n = step - args_cli.warmup_steps
+            delay_states.append(observation_delay_state(unwrapped, idx))
             grav = asset.data.projected_gravity_b[idx]
             gyro = asset.data.root_ang_vel_b[idx]
             root_p = asset.data.root_pos_w[idx]
@@ -242,6 +254,33 @@ def main():
 
     out = os.path.abspath(args_cli.out)
     os.makedirs(os.path.dirname(out), exist_ok=True)
+    meta = {
+        "checkpoint": os.path.abspath(args_cli.checkpoint),
+        "task": args_cli.task,
+        "seed": args_cli.seed,
+        "num_envs": unwrapped.num_envs,
+        "env_index": idx,
+        "command": [args_cli.vx, args_cli.vy, args_cli.wz],
+        "scenario": args_cli.scenario,
+        "warmup_steps": args_cli.warmup_steps,
+        "measure_steps": args_cli.measure_steps,
+        "rows": len(rows),
+        "step_dt": dt,
+        "training_cfg": not args_cli.registry_cfg,
+        "keep_randomization": bool(args_cli.keep_randomization),
+        "slew_limit": bool(args_cli.slew_limit),
+        "set": list(args_cli.set),
+        "obs_delay_steps": int(args_cli.obs_delay),
+        "obs_delay_terms": obs_delayed,
+        "obs_delay_pin": int(args_cli.obs_delay_pin),
+        "obs_delay_pinned_terms": obs_pinned,
+        "delays": summarize_delay_states(delay_states),
+    }
+    meta_path = out + ".meta.json"
+    with open(meta_path + ".partial", "w", encoding="utf-8") as handle:
+        json.dump(meta, handle, indent=2)
+    os.replace(meta_path + ".partial", meta_path)
+    print(f"[trace] delays used: {json.dumps(meta['delays'])}")
     with open(out, "w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(header)

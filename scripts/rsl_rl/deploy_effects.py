@@ -219,6 +219,46 @@ def pin_joint_obs_delay(unwrapped, steps, group="policy"):
     return pinned
 
 
+def observation_delay_state(unwrapped, env_index, group="policy", sensor="imu"):
+    manager = unwrapped.observation_manager
+    joint_max = None
+    for term_cfg in manager._group_obs_term_cfgs[group]:
+        if hasattr(term_cfg.func, "_max_delay"):
+            joint_max = int(term_cfg.func._max_delay)
+            break
+    joint = getattr(unwrapped, "_joint_observation_delay", None)
+    imu = (getattr(unwrapped.scene, "sensors", None) or {}).get(sensor)
+    imu_delay = getattr(imu, "_delay", None)
+    imu_cfg = getattr(imu, "cfg", None)
+    imu_range = None
+    if imu_delay is not None and hasattr(imu_cfg, "min_delay_steps"):
+        imu_range = [int(imu_cfg.min_delay_steps), int(imu_cfg.max_delay_steps)]
+    return {
+        "joint_obs_delay": None if joint is None or joint_max is None else int(joint[env_index]),
+        "joint_obs_max_delay": joint_max,
+        "imu_delay_physics_steps": None if imu_delay is None else int(imu_delay[env_index]),
+        "imu_delay_range_physics_steps": imu_range,
+    }
+
+
+def summarize_delay_states(states):
+    summary = {}
+    for key in ("joint_obs_delay", "imu_delay_physics_steps"):
+        values = [state[key] for state in states]
+        if not values or all(v is None for v in values):
+            summary[key] = None
+            continue
+        summary[key] = {
+            "first": values[0],
+            "last": values[-1],
+            "values": sorted(set(values)),
+            "changes": sum(1 for a, b in zip(values, values[1:]) if a != b),
+        }
+    for key in ("joint_obs_max_delay", "imu_delay_range_physics_steps"):
+        summary[key] = states[0][key] if states else None
+    return summary
+
+
 def _delayed(func, steps):
     buffer = {"step": None, "frames": [], "last": None}
 
