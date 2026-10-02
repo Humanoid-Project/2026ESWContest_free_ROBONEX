@@ -4,6 +4,7 @@ Written so a sim run and a `policy_to_real.py --telemetry` run can go through on
 """
 
 import argparse
+import copy
 import csv
 import json
 import os
@@ -31,6 +32,10 @@ parser.add_argument("--keep_randomization", action="store_true",
                     help="Keep domain randomization and pushes (default: only the reset events)")
 parser.add_argument("--slew_limit", action="store_true",
                     help="Apply the deploy AxisLimiter (6 rad/s, 120 rad/s^2) to the joint targets")
+parser.add_argument("--com_pin", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                    help="Fix the base CoM offset from nominal (m) on every env; default without this flag: nominal (0 0 0)")
+parser.add_argument("--com_keep_training", action="store_true",
+                    help="Keep the base CoM randomisation range of the config instead of pinning it to nominal")
 parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE",
                     help="Override a float in the env config, e.g. scene.robot.actuators.rs02.stiffness.l_hip_yaw_joint=25")
 parser.add_argument("--obs_delay", type=int, default=0,
@@ -51,6 +56,8 @@ from rsl_rl.runners import OnPolicyRunner
 import isaaclab.utils.math as math_utils
 import robonex_walking.tasks  # noqa: F401
 from deploy_effects import (
+    BASE_COM_EVENT,
+    apply_base_com_pin,
     apply_training_env_cfg,
     disable_randomization,
     install_joint_obs_delay,
@@ -65,6 +72,7 @@ from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
+    com_template = copy.deepcopy(getattr(env_cfg.events, BASE_COM_EVENT, None))
     if not args_cli.registry_cfg:
         print(f"[trace] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
         env_cfg.scene.num_envs = args_cli.num_envs
@@ -85,6 +93,7 @@ def main():
                 raise AttributeError(f"--set {path}: no attribute {leaf!r}")
             setattr(node, leaf, float(value))
         print(f"[trace] set {path} = {float(value)}")
+    print(f"[trace] base CoM: {apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)}")
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)

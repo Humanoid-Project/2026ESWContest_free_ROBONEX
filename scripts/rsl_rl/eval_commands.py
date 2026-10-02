@@ -1,6 +1,7 @@
 """Evaluate a trained checkpoint on a fixed grid of velocity commands."""
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -30,6 +31,10 @@ parser.add_argument("--obs_delay_pin", type=int, default=-1,
                     help="For a policy trained with a random joint observation delay: fix that delay at N steps for every env")
 parser.add_argument("--joint_friction", type=float, nargs=2, default=None, metavar=("RS02", "RS03"),
                     help="Fix the Coulomb joint friction (N*m, static = dynamic, no viscous) on every env and reset")
+parser.add_argument("--com_pin", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                    help="Fix the base CoM offset from nominal (m) on every env; default without this flag: nominal (0 0 0)")
+parser.add_argument("--com_keep_training", action="store_true",
+                    help="Keep the base CoM randomisation range restored from the training config instead of pinning it to nominal")
 parser.add_argument("--deploy_overspeed", type=float, default=10.0,
                     help="Deploy stop: actuated joint speed above this (rad/s)")
 parser.add_argument("--deploy_max_error_deg", type=float, default=25.0,
@@ -52,6 +57,8 @@ from rsl_rl.runners import OnPolicyRunner
 
 import robonex_walking.tasks  # noqa: F401
 from deploy_effects import (
+    BASE_COM_EVENT,
+    apply_base_com_pin,
     apply_training_env_cfg,
     install_joint_obs_delay,
     install_slew_limiter,
@@ -315,6 +322,7 @@ def check_training_config(checkpoint, applied):
 
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
+    com_template = copy.deepcopy(getattr(env_cfg.events, BASE_COM_EVENT, None))
     if args_cli.training_cfg:
         print(f"[eval] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
         env_cfg.scene.num_envs = args_cli.num_envs
@@ -329,6 +337,8 @@ def main():
     if args_cli.joint_friction is not None:
         levels = dict(zip(("rs02", "rs03"), args_cli.joint_friction))
         friction_pinned = pin_joint_friction(env_cfg, levels, randomize_joint_coulomb_friction)
+    base_com = apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)
+    print(f"[eval] base CoM: {base_com}")
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
 
     # never resample or zero a command: the harness drives it directly
@@ -392,6 +402,7 @@ def main():
             "obs_delay_pinned_terms": obs_pinned,
             "pushes_disabled": pushes_disabled,
             "joint_friction_pin_nm": friction_pinned,
+            "base_com": base_com,
         },
         "joint_order": joint_names,
         "action_scale": {n: float(act_scale[0, i]) for i, n in enumerate(joint_names)},

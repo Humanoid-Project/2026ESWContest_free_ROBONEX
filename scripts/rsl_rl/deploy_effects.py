@@ -1,3 +1,5 @@
+import copy
+import math
 import pathlib
 
 import torch
@@ -99,6 +101,42 @@ def pin_joint_friction(env_cfg, levels, func):
         "viscous": 0.0,
     }
     return {model: float(level) for model, level in sorted(levels.items())}
+
+
+BASE_COM_EVENT = "randomize_base_com"
+BASE_COM_AXES = ("x", "y", "z")
+
+
+def apply_base_com_pin(env_cfg, offset=None, template=None, keep_training=False):
+    if keep_training and offset is not None:
+        raise ValueError("--com_pin and --com_keep_training exclude each other")
+    term = getattr(env_cfg.events, BASE_COM_EVENT, None)
+    pin = None
+    if keep_training:
+        source = "training"
+    else:
+        pin = [float(v) for v in (offset if offset is not None else (0.0, 0.0, 0.0))]
+        if len(pin) != 3 or not all(math.isfinite(v) for v in pin):
+            raise ValueError(f"the base CoM pin needs three finite offsets in metres: {offset}")
+        source = "pin" if offset is not None else "default_nominal"
+        if term is None and any(pin):
+            if template is None:
+                raise KeyError(f"the env has no {BASE_COM_EVENT} event to pin a non-zero offset with")
+            term = copy.deepcopy(template)
+            setattr(env_cfg.events, BASE_COM_EVENT, term)
+        if term is not None:
+            term.params["com_range"] = {axis: (value, value) for axis, value in zip(BASE_COM_AXES, pin)}
+    com_range = None
+    if term is not None:
+        saved = term.params.get("com_range") or {}
+        com_range = {axis: [float(v) for v in saved.get(axis, (0.0, 0.0))] for axis in BASE_COM_AXES}
+    return {
+        "source": source,
+        "pin_m": pin,
+        "event_present": term is not None,
+        "range_m": com_range,
+        "nominal": com_range is None or all(v == 0.0 for bounds in com_range.values() for v in bounds),
+    }
 
 
 MOVED_DESCRIPTION_PATHS = (
