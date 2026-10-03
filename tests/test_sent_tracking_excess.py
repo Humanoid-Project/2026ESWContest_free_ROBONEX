@@ -57,8 +57,9 @@ def load_nodes(path, names, namespace):
     return namespace
 
 
-def scene_entity(name, joint_ids=slice(None)):
-    return types.SimpleNamespace(name=name, joint_ids=joint_ids)
+class scene_entity(types.SimpleNamespace):
+    def __init__(self, name, joint_ids=slice(None)):
+        super().__init__(name=name, joint_ids=joint_ids)
 
 
 def load_reward():

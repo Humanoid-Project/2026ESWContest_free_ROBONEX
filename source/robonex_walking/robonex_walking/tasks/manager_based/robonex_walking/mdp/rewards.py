@@ -16,7 +16,7 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, wrap_to_pi, yaw_quat
 
 from .joint_speed import joint_speed_excess
-from .tracking import sent_tracking_error
+from .tracking import SentTrackingGateStats, sent_tracking_error
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -651,14 +651,68 @@ def foot_roll_clip_excess_l2(env: ManagerBasedRLEnv, scale: float = 0.01, term_n
     return _saturate(torch.nan_to_num(excess, nan=scale, posinf=scale, neginf=0.0), scale)
 
 
+def _selected(names, ids) -> list[str]:
+    names = list(names)
+    if isinstance(ids, slice):
+        return names[ids]
+    return [names[int(i)] for i in ids]
+
+
+def _leg_side(name: str) -> str:
+    side = name.split("_", 1)[0]
+    if side not in ("l", "r") or "_" not in name:
+        raise ValueError(f"cannot assign {name!r} to a leg: expected an l_ or r_ prefix")
+    return side
+
+
+def _stance_gate_layout(env, asset, joint_ids, sensor_cfg: SceneEntityCfg):
+    key = (id(asset), repr(joint_ids), sensor_cfg.name, repr(sensor_cfg.body_ids))
+    cache = getattr(env, "_sent_tracking_gate_layout", None)
+    if cache is not None and cache[0] == key:
+        return cache[1], cache[2]
+    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    feet = _selected(sensor.body_names, sensor_cfg.body_ids)
+    columns = {}
+    for column, foot in enumerate(feet):
+        side = _leg_side(foot)
+        if side in columns:
+            raise ValueError(f"stance gate: two {side} feet in {feet}")
+        columns[side] = column
+    joints = _selected(asset.joint_names, joint_ids)
+    missing = sorted({_leg_side(j) for j in joints} - set(columns))
+    if missing:
+        raise ValueError(f"stance gate: no foot for side(s) {missing} in {feet}")
+    index = torch.tensor([columns[_leg_side(j)] for j in joints], dtype=torch.long, device=env.device)
+    env._sent_tracking_gate_layout = (key, index, tuple(feet))
+    return index, tuple(feet)
+
+
 def sent_tracking_excess_l2(
-    env: ManagerBasedRLEnv, floor_deg: float = 20.0, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+    env: ManagerBasedRLEnv,
+    floor_deg: float = 20.0,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    stance_gate: bool = False,
+    contact_threshold_n: float = 20.0,
+    sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     joint_ids = asset_cfg.joint_ids
     error = sent_tracking_error(asset.data.joint_pos_target[:, joint_ids], asset.data.joint_pos[:, joint_ids])
     excess = torch.clamp(error - math.radians(floor_deg), min=0.0)
-    return torch.sum(torch.square(excess), dim=1)
+    if not stance_gate:
+        return torch.sum(torch.square(excess), dim=1)
+    if sensor_cfg is None:
+        raise ValueError("sent_tracking_excess_l2: stance_gate needs sensor_cfg (the foot contact sensor)")
+    index, feet = _stance_gate_layout(env, asset, joint_ids, sensor_cfg)
+    loaded = _contact_mask(env, sensor_cfg, contact_threshold_n)
+    squared = torch.square(excess)
+    gated = squared * loaded[:, index]
+    stats = getattr(env, "sent_tracking_gate_stats", None)
+    if stats is None or stats.feet != feet:
+        stats = SentTrackingGateStats(feet, device=squared.device)
+        env.sent_tracking_gate_stats = stats
+    stats.add(squared, gated, loaded)
+    return torch.sum(gated, dim=1)
 
 
 def joint_vel_excess_l2(

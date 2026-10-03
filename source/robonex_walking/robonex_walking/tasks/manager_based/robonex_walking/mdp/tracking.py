@@ -64,3 +64,34 @@ class SentTrackingMetrics:
                 values[f"{p}sent_tracking_{tag}_fraction/{name}"] = self.joint_over[index, j].item() / samples
         self._reset_accumulators()
         return values
+
+
+class SentTrackingGateStats:
+    def __init__(self, feet, device="cpu", prefix="Policy/"):
+        self.feet = tuple(feet)
+        self.device = device
+        self.prefix = prefix
+        self._reset_accumulators()
+
+    def _reset_accumulators(self) -> None:
+        self.samples = torch.zeros((), device=self.device)
+        self.ungated = torch.zeros((), device=self.device, dtype=torch.float64)
+        self.gated = torch.zeros((), device=self.device, dtype=torch.float64)
+        self.loaded = torch.zeros(len(self.feet), device=self.device)
+
+    def add(self, squared: torch.Tensor, gated: torch.Tensor, loaded: torch.Tensor) -> None:
+        with torch.no_grad():
+            self.samples += loaded.shape[0]
+            self.ungated += squared.sum(dtype=torch.float64)
+            self.gated += gated.sum(dtype=torch.float64)
+            self.loaded += loaded.sum(dim=0)
+
+    def take_log(self) -> dict[str, float]:
+        p = self.prefix
+        samples = max(1.0, float(self.samples.item()))
+        ungated = float(self.ungated.item())
+        values = {f"{p}sent_tracking_gated_fraction": float(self.gated.item()) / ungated if ungated > 0.0 else 1.0}
+        for j, foot in enumerate(self.feet):
+            values[f"{p}sent_tracking_gate_loaded_fraction/{foot}"] = self.loaded[j].item() / samples
+        self._reset_accumulators()
+        return values

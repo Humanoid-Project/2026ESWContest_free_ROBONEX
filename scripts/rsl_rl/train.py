@@ -257,6 +257,9 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
             values.update(self.walk_metrics.take_log())
         if self.sent_tracking is not None:
             values.update(self.sent_tracking.take_log())
+        gate_stats = getattr(self.unwrapped, "sent_tracking_gate_stats", None)
+        if gate_stats is not None:
+            values.update(gate_stats.take_log())
         if self.joint_speed is not None:
             values.update(self.joint_speed.take_log())
         return values

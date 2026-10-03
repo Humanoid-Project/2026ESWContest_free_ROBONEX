@@ -85,6 +85,8 @@ JOINT_LOAD_WEIGHT = 0.0
 JOINT_LOAD_MAX_RATIO = 5.0
 SENT_TRACKING_EXCESS_WEIGHT = 0.0
 SENT_TRACKING_EXCESS_FLOOR_DEG = 20.0
+SENT_TRACKING_EXCESS_STANCE_GATE = False
+SENT_TRACKING_EXCESS_CONTACT_N = 20.0
 JOINT_VEL_EXCESS_WEIGHT = 0.0
 JOINT_VEL_EXCESS_FLOOR_RAD_S = 8.0
 JOINT_VEL_EXCESS_CAP_RAD_S = 20.0
@@ -647,6 +649,9 @@ class RewardsCfg:
         params={
             "floor_deg": SENT_TRACKING_EXCESS_FLOOR_DEG,
             "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS, preserve_order=True),
+            "stance_gate": SENT_TRACKING_EXCESS_STANCE_GATE,
+            "contact_threshold_n": SENT_TRACKING_EXCESS_CONTACT_N,
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True),
         },
     )
     joint_vel_excess = RewTerm(
