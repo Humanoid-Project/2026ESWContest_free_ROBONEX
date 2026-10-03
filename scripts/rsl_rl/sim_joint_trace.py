@@ -36,6 +36,11 @@ parser.add_argument("--com_pin", type=float, nargs=3, default=None, metavar=("X"
                     help="Fix the base CoM offset from nominal (m) on every env; default without this flag: nominal (0 0 0)")
 parser.add_argument("--com_keep_training", action="store_true",
                     help="Keep the base CoM randomisation range of the config instead of pinning it to nominal")
+parser.add_argument("--load_pin", type=float, nargs=6, default=None, metavar=("FX", "FY", "FZ", "TX", "TY", "TZ"),
+                    help="Fix the sustained base_link load (N, N*m, base link frame, at the link origin) on every env; "
+                         "default without this flag: no load")
+parser.add_argument("--load_keep_training", action="store_true",
+                    help="Keep the sustained base load range of the config instead of pinning it to zero")
 parser.add_argument("--set", action="append", default=[], metavar="PATH=VALUE",
                     help="Override a float in the env config, e.g. scene.robot.actuators.rs02.stiffness.l_hip_yaw_joint=25")
 parser.add_argument("--obs_delay", type=int, default=0,
@@ -57,7 +62,9 @@ import isaaclab.utils.math as math_utils
 import robonex_walking.tasks  # noqa: F401
 from deploy_effects import (
     BASE_COM_EVENT,
+    BASE_LOAD_EVENT,
     apply_base_com_pin,
+    apply_base_load_pin,
     apply_training_env_cfg,
     disable_randomization,
     install_joint_obs_delay,
@@ -73,12 +80,14 @@ from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
     com_template = copy.deepcopy(getattr(env_cfg.events, BASE_COM_EVENT, None))
+    load_template = copy.deepcopy(getattr(env_cfg.events, BASE_LOAD_EVENT, None))
     if not args_cli.registry_cfg:
         print(f"[trace] training config: {apply_training_env_cfg(env_cfg, args_cli.checkpoint)}")
         env_cfg.scene.num_envs = args_cli.num_envs
     if not args_cli.keep_randomization:
         com_kept = (BASE_COM_EVENT,) if args_cli.com_keep_training or args_cli.com_pin is not None else ()
-        print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg, com_kept)}")
+        load_kept = (BASE_LOAD_EVENT,) if args_cli.load_keep_training or args_cli.load_pin is not None else ()
+        print(f"[trace] randomization off; kept events: {disable_randomization(env_cfg, com_kept + load_kept)}")
     for item in args_cli.set:
         path, value = item.split("=", 1)
         *parents, leaf = path.split(".")
@@ -96,6 +105,8 @@ def main():
         print(f"[trace] set {path} = {float(value)}")
     base_com = apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)
     print(f"[trace] base CoM: {base_com}")
+    base_load = apply_base_load_pin(env_cfg, args_cli.load_pin, load_template, args_cli.load_keep_training)
+    print(f"[trace] base load: {base_load}")
     env_cfg.seed = args_cli.seed
     agent_cfg = load_cfg_from_registry(args_cli.task, "rsl_rl_cfg_entry_point")
     env_cfg.commands.base_velocity.resampling_time_range = (1.0e9, 1.0e9)
@@ -287,6 +298,7 @@ def main():
         "obs_delay_pinned_terms": obs_pinned,
         "delays": summarize_delay_states(delay_states),
         "base_com": base_com,
+        "base_load": base_load,
     }
     meta_path = out + ".meta.json"
     with open(meta_path + ".partial", "w", encoding="utf-8") as handle:

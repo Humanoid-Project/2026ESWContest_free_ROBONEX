@@ -122,7 +122,8 @@ class TraceCallOrderTest(unittest.TestCase):
         args = types.SimpleNamespace(task="RoboNex-Walking-V2-Edu-v0", device="cpu", num_envs=1,
                                      checkpoint=str(run / "model_999.pt"), registry_cfg=False,
                                      keep_randomization=keep_randomization, set=[],
-                                     com_pin=com_pin, com_keep_training=keep_training)
+                                     com_pin=com_pin, com_keep_training=keep_training,
+                                     load_pin=None, load_keep_training=False)
         records = []
 
         def recording_pin(*a, **k):
@@ -130,7 +131,7 @@ class TraceCallOrderTest(unittest.TestCase):
             return records[-1]
 
         ns = {name: getattr(effects, name) for name in
-              ("BASE_COM_EVENT", "apply_training_env_cfg", "disable_randomization")}
+              ("BASE_COM_EVENT", "BASE_LOAD_EVENT", "apply_training_env_cfg", "disable_randomization")}
         ns["apply_base_com_pin"] = recording_pin
         ns.update(copy=copy, args_cli=args, print=lambda *a, **k: None,
                   parse_env_cfg=lambda task, device, num_envs: cfg)

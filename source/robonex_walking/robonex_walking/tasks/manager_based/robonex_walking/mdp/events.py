@@ -116,3 +116,54 @@ class randomize_rigid_body_com_offset(ManagerTermBase):
         coms[rows, body_ids] = self.nominal_coms[rows, body_ids]
         coms[rows, body_ids, :3] += offset.to(coms.dtype)
         asset.root_physx_view.set_coms(coms, env_ids)
+
+
+_LOAD_AXES = ("x", "y", "z")
+
+
+def _sustained_load_bounds(force_range, torque_range, application_height_m):
+    ranges = (force_range, torque_range)
+    bounds = torch.tensor([[float(r.get(axis, (0.0, 0.0))[i]) for r in ranges for axis in _LOAD_AXES] for i in (0, 1)])
+    height = torch.tensor(float(application_height_m))
+    if not bool(torch.all(torch.isfinite(bounds))) or not bool(torch.isfinite(height)):
+        raise ValueError(f"non-finite sustained load: force {force_range}, torque {torque_range}, "
+                         f"height {application_height_m}")
+    if bool(torch.any(bounds[1] < bounds[0])):
+        raise ValueError(f"sustained load upper bound below lower bound: force {force_range}, torque {torque_range}")
+    return bounds[0], bounds[1]
+
+
+def apply_sustained_base_load(
+    env,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg,
+    force_range: dict[str, tuple[float, float]],
+    torque_range: dict[str, tuple[float, float]],
+    application_height_m: float = 0.0,
+):
+    low, high = _sustained_load_bounds(force_range, torque_range, application_height_m)
+    if not bool(torch.any(low != 0.0) or torch.any(high != 0.0)):
+        return
+    asset: Articulation = env.scene[asset_cfg.name]
+    body_ids = asset_cfg.body_ids
+    if isinstance(body_ids, slice):
+        body_ids = list(range(asset.num_bodies))[body_ids]
+    body_ids = [int(b) for b in body_ids]
+    if len(body_ids) != 1:
+        raise ValueError(f"the sustained load acts on exactly one body, got body_ids {body_ids}")
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=asset.device)
+    low = low.to(asset.device)
+    high = high.to(asset.device)
+    wrench = low.expand(len(env_ids), 6).clone()
+    if bool(torch.any(high > low)):
+        wrench += (high - low) * torch.rand(len(env_ids), 6, device=asset.device)
+    force = wrench[:, :3]
+    lever = torch.tensor([0.0, 0.0, float(application_height_m)], device=asset.device).expand_as(force)
+    torque = wrench[:, 3:] + torch.linalg.cross(lever, force, dim=-1)
+    asset.permanent_wrench_composer.set_forces_and_torques(
+        forces=force.unsqueeze(1).contiguous(),
+        torques=torque.unsqueeze(1).contiguous(),
+        body_ids=body_ids,
+        env_ids=env_ids,
+    )

@@ -100,6 +100,9 @@ JOINT_OBS_MAX_DELAY_STEPS = 0
 JOINT_FRICTION_RANGE = {"rs02": (0.05, 0.25), "rs03": (0.2, 0.8)}
 JOINT_STATIC_FRICTION_RATIO = 1.0
 BASE_COM_RANGE = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}
+SUSTAINED_LOAD_FORCE_RANGE = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}
+SUSTAINED_LOAD_TORQUE_RANGE = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}
+SUSTAINED_LOAD_HEIGHT_M = 0.0
 
 
 @configclass
@@ -416,6 +419,17 @@ class EventCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"]),
             "com_range": dict(BASE_COM_RANGE),
+        },
+    )
+
+    sustained_base_load = EventTerm(
+        func=mdp.apply_sustained_base_load,
+        mode="reset",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=["base_link"]),
+            "force_range": dict(SUSTAINED_LOAD_FORCE_RANGE),
+            "torque_range": dict(SUSTAINED_LOAD_TORQUE_RANGE),
+            "application_height_m": SUSTAINED_LOAD_HEIGHT_M,
         },
     )
 

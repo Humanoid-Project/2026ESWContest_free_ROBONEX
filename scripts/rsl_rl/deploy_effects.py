@@ -139,6 +139,49 @@ def apply_base_com_pin(env_cfg, offset=None, template=None, keep_training=False)
     }
 
 
+BASE_LOAD_EVENT = "sustained_base_load"
+BASE_LOAD_AXES = ("x", "y", "z")
+
+
+def apply_base_load_pin(env_cfg, load=None, template=None, keep_training=False):
+    if keep_training and load is not None:
+        raise ValueError("--load_pin and --load_keep_training exclude each other")
+    term = getattr(env_cfg.events, BASE_LOAD_EVENT, None)
+    pin = None
+    if keep_training:
+        source = "training"
+    else:
+        pin = [float(v) for v in (load if load is not None else (0.0,) * 6)]
+        if len(pin) != 6 or not all(math.isfinite(v) for v in pin):
+            raise ValueError(f"the base load pin needs six finite values FX FY FZ (N) TX TY TZ (N*m): {load}")
+        source = "pin" if load is not None else "default_zero"
+        if term is None and any(pin):
+            if template is None:
+                raise KeyError(f"the env has no {BASE_LOAD_EVENT} event to pin a non-zero load with")
+            term = copy.deepcopy(template)
+            setattr(env_cfg.events, BASE_LOAD_EVENT, term)
+        if term is not None:
+            term.params["force_range"] = {axis: (value, value) for axis, value in zip(BASE_LOAD_AXES, pin[:3])}
+            term.params["torque_range"] = {axis: (value, value) for axis, value in zip(BASE_LOAD_AXES, pin[3:])}
+            term.params["application_height_m"] = 0.0
+    force_range = torque_range = height = None
+    if term is not None:
+        force_range, torque_range = (
+            {axis: [float(v) for v in (term.params.get(key) or {}).get(axis, (0.0, 0.0))] for axis in BASE_LOAD_AXES}
+            for key in ("force_range", "torque_range"))
+        height = float(term.params.get("application_height_m", 0.0))
+    return {
+        "source": source,
+        "pin": pin,
+        "event_present": term is not None,
+        "force_range_n": force_range,
+        "torque_range_nm": torque_range,
+        "application_height_m": height,
+        "zero_load": force_range is None or all(
+            v == 0.0 for ranges in (force_range, torque_range) for bounds in ranges.values() for v in bounds),
+    }
+
+
 MOVED_DESCRIPTION_PATHS = (
     ("/robonex-description/new_urdf/", "/robonex-description/ver2/",
      "Ver.2 USD regenerated 2026-09-27 with the decided hip limits; runs before W73 trained on the older limits"),
