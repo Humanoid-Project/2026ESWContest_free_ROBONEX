@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TASK = ROOT / "source/robonex_walking/robonex_walking/tasks/manager_based/robonex_walking"
 REWARDS = TASK / "mdp/rewards.py"
 TRACKING = TASK / "mdp/tracking.py"
+JOINT_SPEED = TASK / "mdp/joint_speed.py"
 ACTIONS = TASK / "mdp/actions.py"
 ENV_CFG = TASK / "robonex_walking_v2_env_cfg.py"
 EFFECTS = ROOT / "scripts/rsl_rl/deploy_effects.py"
@@ -27,6 +28,7 @@ W102_RUN = Path(
     "2026-10-02_10-26-01_W102s44_v2_edu_jointdelay_s44"
 )
 TRACKING_MODULE = "robonex_walking.tasks.manager_based.robonex_walking.mdp.tracking"
+JOINT_SPEED_MODULE = "robonex_walking.tasks.manager_based.robonex_walking.mdp.joint_speed"
 
 LEG_JOINTS = (
     "l_hip_yaw_joint", "l_hip_pitch_joint", "l_hip_roll_joint", "l_knee_pitch_joint",
@@ -228,9 +230,9 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(asset_kw["joint_names"].id, "LEG_JOINTS")
         self.assertTrue(ast.literal_eval(asset_kw["preserve_order"]))
 
-    def test_new_term_is_last_so_existing_term_order_is_unchanged(self):
+    def test_new_term_follows_every_older_term_so_existing_term_order_is_unchanged(self):
         names = [n.targets[0].id for n in self.rewards.body if isinstance(n, ast.Assign)]
-        self.assertEqual(names[-1], "sent_tracking_excess")
+        self.assertEqual(names[-2:], ["sent_tracking_excess", "joint_vel_excess"])
         self.assertEqual(names.count("sent_tracking_excess"), 1)
 
     def test_reward_manager_skips_a_zero_weight_term(self):
@@ -474,7 +476,8 @@ class SentTrackingMetricsTest(unittest.TestCase):
     def setUp(self):
         self.tracking = load_module("tracking_metrics_under_test", TRACKING)
         self.names = ["a", "b", "c"]
-        self.data = types.SimpleNamespace(joint_pos=torch.zeros(4, 5), joint_pos_target=torch.zeros(4, 5))
+        self.data = types.SimpleNamespace(joint_pos=torch.zeros(4, 5), joint_pos_target=torch.zeros(4, 5),
+                                          joint_vel=torch.zeros(4, 5))
         self.robot = types.SimpleNamespace(data=self.data)
 
     def test_fractions_peaks_and_keys(self):
@@ -528,15 +531,17 @@ class SentTrackingMetricsTest(unittest.TestCase):
 
         env = types.SimpleNamespace(action_manager=types.SimpleNamespace(get_term=lambda _: term),
                                     scene=Scene(robot=self.robot), termination_manager=terminations)
-        saved = sys.modules.get(TRACKING_MODULE)
-        sys.modules[TRACKING_MODULE] = self.tracking
+        modules = {TRACKING_MODULE: self.tracking, JOINT_SPEED_MODULE: load_module("joint_speed_wrapper", JOINT_SPEED)}
+        saved = {name: sys.modules.get(name) for name in modules}
+        sys.modules.update(modules)
         try:
             wrapper = diagnostics["DiagnosticVecEnvWrapper"](env, clip_actions=None)
         finally:
-            if saved is None:
-                sys.modules.pop(TRACKING_MODULE, None)
-            else:
-                sys.modules[TRACKING_MODULE] = saved
+            for name, module in saved.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
         self.data.joint_pos_target[0, 4] = math.radians(30.0)
         result = env.termination_manager.compute()
         self.assertEqual(result.shape, (4,))

@@ -155,17 +155,23 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
                 sole_corners=cfg.foot_sole_corners,
             )
         self.sent_tracking = None
+        self.joint_speed = None
         terminations = getattr(self.unwrapped, "termination_manager", None)
         if scene is not None and terminations is not None:
+            from robonex_walking.tasks.manager_based.robonex_walking.mdp.joint_speed import (
+                JointSpeedMetrics,
+            )
             from robonex_walking.tasks.manager_based.robonex_walking.mdp.tracking import (
                 SentTrackingMetrics,
             )
             self.sent_tracking = SentTrackingMetrics(scene["robot"], term._joint_ids, term._joint_names)
+            self.joint_speed = JointSpeedMetrics(scene["robot"], term._joint_ids, term._joint_names)
             compute = terminations.compute
 
             def compute_and_sample():
                 result = compute()
                 self.sent_tracking.sample()
+                self.joint_speed.sample()
                 return result
 
             terminations.compute = compute_and_sample
@@ -251,6 +257,8 @@ class DiagnosticVecEnvWrapper(RslRlVecEnvWrapper):
             values.update(self.walk_metrics.take_log())
         if self.sent_tracking is not None:
             values.update(self.sent_tracking.take_log())
+        if self.joint_speed is not None:
+            values.update(self.joint_speed.take_log())
         return values
 
 
