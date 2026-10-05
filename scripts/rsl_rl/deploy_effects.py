@@ -384,3 +384,22 @@ def _delayed(func, steps):
         return output
 
     return delayed
+
+
+PUSH_EVENT = "push_robot"
+
+
+def apply_push_interval(env_cfg, interval=None):
+    term = getattr(env_cfg.events, PUSH_EVENT, None)
+    if interval is None:
+        source = "training"
+    else:
+        lo, hi = (float(v) for v in interval)
+        if not (math.isfinite(lo) and math.isfinite(hi) and 0.0 < lo <= hi):
+            raise ValueError(f"the push interval needs 0 < low <= high in seconds: {interval}")
+        if term is None:
+            raise KeyError(f"the env has no {PUSH_EVENT} event to set an interval on (pushes disabled?)")
+        term.interval_range_s = (lo, hi)
+        source = "pin"
+    current = None if term is None else [float(v) for v in term.interval_range_s]
+    return {"source": source, "event_present": term is not None, "interval_s": current}
