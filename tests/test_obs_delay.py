@@ -56,6 +56,34 @@ class DelayTest(unittest.TestCase):
         self.assertEqual(term(env, asset_cfg).squeeze(-1).tolist(), [11.0, 7.0])
 
 
+class FixedDelayTest(unittest.TestCase):
+    def _env(self, n):
+        data = types.SimpleNamespace(joint_pos=torch.zeros(n, 1), default_joint_pos=torch.zeros(n, 1))
+        env = types.SimpleNamespace(num_envs=n, device="cpu", scene={"robot": types.SimpleNamespace(data=data)},
+                                    common_step_counter=0, episode_length_buf=torch.zeros(n, dtype=torch.long))
+        return env, types.SimpleNamespace(name="robot", joint_ids=slice(None))
+
+    def test_min_equal_max_draws_only_that_delay(self):
+        cls = load()
+        env, asset_cfg = self._env(256)
+        term = cls(types.SimpleNamespace(params={"asset_cfg": asset_cfg, "max_delay_steps": 1, "min_delay_steps": 1}), env)
+        self.assertTrue(bool((term._delay == 1).all()))
+        term.reset(torch.arange(256))
+        self.assertTrue(bool((term._delay == 1).all()))
+
+    def test_default_min_keeps_zero_or_one(self):
+        cls = load()
+        env, asset_cfg = self._env(512)
+        term = cls(types.SimpleNamespace(params={"asset_cfg": asset_cfg, "max_delay_steps": 1}), env)
+        self.assertEqual(sorted(set(term._delay.tolist())), [0, 1])
+
+    def test_min_above_max_is_refused(self):
+        cls = load()
+        env, asset_cfg = self._env(4)
+        with self.assertRaises(ValueError):
+            cls(types.SimpleNamespace(params={"asset_cfg": asset_cfg, "max_delay_steps": 1, "min_delay_steps": 2}), env)
+
+
 class SharedDelayTest(unittest.TestCase):
     def test_position_and_velocity_share_one_delay(self):
         cls = load()

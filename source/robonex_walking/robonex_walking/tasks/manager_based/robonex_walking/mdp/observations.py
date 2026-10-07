@@ -51,9 +51,12 @@ class delayed_joint_state(ManagerTermBase):
         super().__init__(cfg, env)
         self._asset_cfg = cfg.params["asset_cfg"]
         self._max_delay = int(cfg.params.get("max_delay_steps", 1))
+        self._min_delay = int(cfg.params.get("min_delay_steps", 0))
+        if not 0 <= self._min_delay <= self._max_delay:
+            raise ValueError("joint observation delay needs 0 <= min_delay_steps <= max_delay_steps, got %d..%d" % (self._min_delay, self._max_delay))
         shared = getattr(env, "_joint_observation_delay", None)
         if shared is None:
-            shared = torch.randint(0, self._max_delay + 1, (env.num_envs,), device=env.device)
+            shared = torch.randint(self._min_delay, self._max_delay + 1, (env.num_envs,), device=env.device)
             env._joint_observation_delay = shared
         self._delay = shared
         self._frames = None
@@ -63,9 +66,10 @@ class delayed_joint_state(ManagerTermBase):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device)
         env_ids = torch.as_tensor(env_ids, device=self.device)
-        self._delay[env_ids] = torch.randint(0, self._max_delay + 1, (len(env_ids),), device=self.device)
+        self._delay[env_ids] = torch.randint(self._min_delay, self._max_delay + 1, (len(env_ids),), device=self.device)
 
-    def __call__(self, env: ManagerBasedRLEnv, asset_cfg, field: str = "pos", max_delay_steps: int = 1):
+    def __call__(self, env: ManagerBasedRLEnv, asset_cfg, field: str = "pos", max_delay_steps: int = 1,
+                 min_delay_steps: int = 0):
         asset = env.scene[asset_cfg.name]
         if field == "pos":
             current = asset.data.joint_pos[:, asset_cfg.joint_ids] - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
