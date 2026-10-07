@@ -26,6 +26,8 @@ parser.add_argument("--slew_limit", action="store_true",
 parser.add_argument("--push_interval", type=float, nargs=2, default=None, metavar=("LOW", "HIGH"),
                     help="Set the push_robot interval (s) instead of the training one, e.g. 10 15 to compare a run "
                          "trained with another push schedule against its control")
+parser.add_argument("--hip_yaw_kp_nominal", action="store_true",
+                    help="Pin the hip-yaw stiffness randomization to scale (1, 1), i.e. the robot's nominal hip-yaw kp")
 parser.add_argument("--no_push", action="store_true",
                     help="Disable the push events (push_robot, push_standing) for a like-for-like comparison across runs")
 parser.add_argument("--obs_delay", type=int, default=0,
@@ -68,6 +70,7 @@ from deploy_effects import (
     BASE_COM_EVENT,
     BASE_LOAD_EVENT,
     apply_base_com_pin,
+    apply_hip_yaw_kp_nominal,
     apply_push_interval,
     apply_base_load_pin,
     apply_training_env_cfg,
@@ -348,6 +351,8 @@ def main():
                 setattr(env_cfg.events, name, None)
                 pushes_disabled.append(name)
     push_interval = apply_push_interval(env_cfg, args_cli.push_interval)
+    hip_yaw_kp = apply_hip_yaw_kp_nominal(env_cfg, args_cli.hip_yaw_kp_nominal)
+    print(f"[eval] hip-yaw kp: {hip_yaw_kp}")
     friction_pinned = None
     if args_cli.joint_friction is not None:
         levels = dict(zip(("rs02", "rs03"), args_cli.joint_friction))
@@ -419,6 +424,7 @@ def main():
             "obs_delay_pinned_terms": obs_pinned,
             "pushes_disabled": pushes_disabled,
             "push_interval": push_interval,
+            "hip_yaw_kp": hip_yaw_kp,
             "joint_friction_pin_nm": friction_pinned,
             "base_com": base_com,
             "base_load": base_load,

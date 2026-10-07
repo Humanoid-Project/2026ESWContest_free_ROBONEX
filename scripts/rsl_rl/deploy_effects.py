@@ -403,3 +403,30 @@ def apply_push_interval(env_cfg, interval=None):
         source = "pin"
     current = None if term is None else [float(v) for v in term.interval_range_s]
     return {"source": source, "event_present": term is not None, "interval_s": current}
+
+
+HIP_YAW_STIFFNESS_EVENT = "randomize_hip_yaw_stiffness"
+
+
+def apply_hip_yaw_kp_nominal(env_cfg, nominal=False):
+    term = getattr(env_cfg.events, HIP_YAW_STIFFNESS_EVENT, None)
+    if nominal:
+        if term is None:
+            raise KeyError(f"the env has no {HIP_YAW_STIFFNESS_EVENT} event to pin to the nominal gain")
+        operation = term.params.get("operation")
+        distribution = term.params.get("distribution", "uniform")
+        if operation != "scale" or distribution not in ("uniform", "log_uniform"):
+            raise ValueError(
+                f"{HIP_YAW_STIFFNESS_EVENT} must scale with a uniform or log_uniform draw to pin (1, 1) as nominal; "
+                f"got operation={operation!r}, distribution={distribution!r}"
+            )
+        term.params["stiffness_distribution_params"] = (1.0, 1.0)
+        source = "pin"
+    else:
+        source = "training"
+    scale = None if term is None else term.params.get("stiffness_distribution_params")
+    return {
+        "source": source,
+        "event_present": term is not None,
+        "stiffness_scale": None if scale is None else [float(v) for v in scale],
+    }

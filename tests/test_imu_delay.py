@@ -189,10 +189,10 @@ class ImuDelayTest(unittest.TestCase):
                 self.assertTrue(torch.equal(imu._data.ang_vel_b, expected_w))
                 self.assertTrue(torch.equal(imu._data.projected_gravity_b, expected_g))
 
-    def test_cfg_wiring_is_off_by_default_and_term_names_are_unchanged(self):
+    def test_cfg_wiring_defaults_and_term_names_are_unchanged(self):
         tree = ast.parse(ENV_CFG.read_text())
         consts = {n.targets[0].id: n.value for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)}
-        self.assertEqual(ast.literal_eval(consts["IMU_DELAY_STEPS"]), (0, 0))
+        self.assertEqual(ast.literal_eval(consts["IMU_DELAY_STEPS"]), (1, 6))
         cfg_default = next(n for n in ast.parse(OBS.read_text()).body if getattr(n, "name", None) == "DelayedImuCfg")
         defaults = {n.target.id: ast.literal_eval(n.value) for n in cfg_default.body if isinstance(n, ast.AnnAssign) and n.target.id.endswith("_steps")}
         self.assertEqual(defaults, {"min_delay_steps": 0, "max_delay_steps": 0})

@@ -510,7 +510,7 @@ def test_ver2_agent_cfg_uses_smooth_ppo_with_the_w92_default():
     algorithm = next(n for n in runner.body if isinstance(n, ast.Assign) and n.targets[0].id == "algorithm")
     assert algorithm.value.func.id == "SmoothPpoAlgorithmCfg"
     kwargs = {k.arg: ast.literal_eval(k.value) for k in algorithm.value.keywords if isinstance(k.value, ast.Constant)}
-    assert kwargs["hf_gyro_coef"] == 0.0
+    assert kwargs["hf_gyro_coef"] == 0.0375
     assert kwargs["hf_closed_loop"] is True
     assert kwargs["lcp_coef"] == 0.0
 

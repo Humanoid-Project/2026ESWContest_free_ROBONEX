@@ -176,42 +176,12 @@ def track_ang_vel_z_exp(
     return torch.exp(-error / std**2)
 
 
-def track_lin_vel_y_exp(
-    env: ManagerBasedRLEnv,
-    std: float,
-    command_name: str = "base_velocity",
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Reward lateral tracking, including the zero-lateral case.
-
-    Ungated, like ``track_lin_vel_x_exp`` and ``track_ang_vel_z_exp``. The earlier
-    ``|cy| > deadband`` gate meant the term paid nothing while walking straight, so
-    holding the line sideways was worth nothing and the lateral axis was carried by a
-    -0.3 penalty instead. Measured after 313 iterations trained with y in +/-0.2, that
-    policy realised 12-30% of a lateral command and answered vy=-0.2 by yawing 76 deg.
-    No reference penalises lateral velocity; every one of them rewards tracking it.
-    """
-    command = env.command_manager.get_command(command_name)
-    vel_y = _root_lin_vel_yaw_frame(env, asset_cfg)[:, 1]
-    error = _bounded_square(command[:, 1] - vel_y, 5.0)
-    return torch.exp(-error / std**2)
-
-
 def lin_vel_z_l2_bounded(
     env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     scale: float = 0.04,
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     return _saturate(_bounded_square(asset.data.root_lin_vel_b[:, 2], 2.0), scale)
-
-
-def ang_vel_z_l2_bounded(
-    env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    scale: float = 0.8,
-) -> torch.Tensor:
-    """Penalize z-axis base angular velocity (yaw rotation)."""
-    asset: Articulation = env.scene[asset_cfg.name]
-    return _saturate(_bounded_square(asset.data.root_ang_vel_b[:, 2], 3.0), scale)
 
 
 def ang_vel_xy_l2_bounded(
@@ -379,89 +349,6 @@ def torque_overrun_l2(
 
 
 
-class torque_thermal_l2(ManagerTermBase):
-    """Penalize the *time-integrated* load on each motor, not the instantaneous excess.
-
-    ``torque_overrun_l2`` scores the per-step excess over the rating. Thermal damage is the
-    integral of ``tau^2``, and the difference is not academic: hardware measured l_hip_roll at
-    12.05 N.m RMS against a 13 N.m rating -- inside the threshold 65.6% of samples, so for two
-    thirds of the trajectory the old term's gradient was exactly zero.
-
-    Here ``h`` is an exponential running mean of ``(tau / limit)^2`` with time constant
-    ``time_constant``. At a steady ``tau = r * limit`` it converges to ``r^2``, so ``h > 1``
-    means "this joint has been averaging above its derated rating" and ``relu`` leaves a
-    correct posture at zero cost. Because ``dh/dtau > 0`` at every step, a joint already in
-    debt is pushed on every sample rather than only while over the line.
-
-    The excess is taken **linearly**, not squared. ``h`` is already a mean of ``tau^2``, so
-    ``relu(h - 1)`` is already quadratic in torque; squaring again would be quartic, which has
-    no thermal justification and is a reward-hacking trap. At a weight matched to the term it
-    replaces, the squared form scores a 35 N.m squeeze at -39 against a -5 termination
-    penalty, so falling over deliberately would be the cheaper policy.
-
-    ``max_excess`` caps ``h`` and therefore the penalty. **Where that cap sits is the whole
-    design.** S20 set it to 2, putting the ceiling at 18.2 N.m -- inside the operating range,
-    where S19 already spent 29.5% of its samples -- and the policy climbed onto the plateau,
-    because past a ceiling more torque is free. It settled at 18.34 N.m RMS, 36% worse than the
-    baseline it was supposed to improve. At 6 the ceiling is 27.9 N.m, twice the operating
-    torque, and only 0.9% of baseline samples reach it.
-
-    ``limit`` is the same speed-interpolated, margin-derated rating ``torque_overrun_l2``
-    uses. ``h`` is per-environment state, zeroed on reset, and is not observed by the critic.
-    ``time_constant`` is a training proxy covering a few gait periods -- not a motor thermal
-    constant, which is minutes.
-    """
-
-    def __init__(self, cfg, env: ManagerBasedRLEnv):
-        super().__init__(cfg, env)
-        params = cfg.params
-        asset_cfg: SceneEntityCfg = params["asset_cfg"]
-        self._asset: Articulation = env.scene[asset_cfg.name]
-        self._joint_ids = asset_cfg.joint_ids
-        names = (
-            self._asset.joint_names
-            if isinstance(self._joint_ids, slice)
-            else [self._asset.joint_names[i] for i in self._joint_ids]
-        )
-        margin = params.get("margin", 0.8)
-        device = env.device
-        self._low = torch.tensor([params["rated_standstill"][n] for n in names], device=device) * margin
-        self._high = torch.tensor([params["rated_spinning"][n] for n in names], device=device) * margin
-        self._spin_speed = params.get("spin_speed", 10.47)
-        self._max_excess = params.get("max_excess", 6.0)
-        time_constant = params.get("time_constant", 5.0)
-        self._decay = math.exp(-float(env.step_dt) / time_constant)
-        self._heat = torch.zeros(env.num_envs, len(names), device=device)
-
-    def reset(self, env_ids=None):
-        if env_ids is None:
-            self._heat.zero_()
-        else:
-            self._heat[env_ids] = 0.0
-
-    def __call__(
-        self,
-        env: ManagerBasedRLEnv,
-        rated_standstill: dict[str, float],
-        rated_spinning: dict[str, float],
-        asset_cfg: SceneEntityCfg,
-        spin_speed: float = 10.47,
-        margin: float = 0.8,
-        max_excess: float = 6.0,
-        time_constant: float = 5.0,
-    ) -> torch.Tensor:
-        speed = torch.nan_to_num(
-            self._asset.data.joint_vel[:, self._joint_ids], nan=0.0, posinf=0.0, neginf=0.0
-        ).abs()
-        limit = self._low + (self._high - self._low) * torch.clamp(speed / self._spin_speed, max=1.0)
-        torque = torch.nan_to_num(
-            self._asset.data.applied_torque[:, self._joint_ids], nan=0.0, posinf=0.0, neginf=0.0
-        ).abs()
-        load = torch.clamp((torque / limit) ** 2, max=1.0 + self._max_excess)
-        self._heat.mul_(self._decay).add_(load, alpha=1.0 - self._decay)
-        return torch.sum(torch.clamp(self._heat - 1.0, min=0.0), dim=1)
-
-
 def energy_l2_bounded(
     env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     scale: float = 120.0,
@@ -520,83 +407,6 @@ def foot_slip_latest_l2(
     asset: Articulation = env.scene[asset_cfg.name]
     foot_vel_xy = asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2]
     return _saturate(torch.sum(torch.sum(_bounded_square(foot_vel_xy, 2.0), dim=-1) * contacts, dim=1), scale)
-
-
-class _GaitTracker:
-    def __init__(self, env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg):
-        self.sensor_cfg = sensor_cfg
-        self.step = None
-        n, dev = env.num_envs, env.device
-        self.prev_contact = torch.zeros(n, 2, dtype=torch.bool, device=dev)
-        self.started = torch.zeros(n, dtype=torch.bool, device=dev)
-        self.last_td_foot = torch.full((n,), -1, dtype=torch.long, device=dev)
-        self.touchdown_credit = torch.zeros(n, device=dev)
-        self.pending_reset = torch.zeros(n, dtype=torch.bool, device=dev)
-
-    def update(self, env: ManagerBasedRLEnv) -> "_GaitTracker":
-        if self.step == env.common_step_counter:
-            return self
-        self.step = env.common_step_counter
-        sensor: ContactSensor = env.scene.sensors[self.sensor_cfg.name]
-        forces = sensor.data.net_forces_w_history[:, :, self.sensor_cfg.body_ids, :]
-        forces = torch.nan_to_num(forces, nan=0.0, posinf=0.0, neginf=0.0)
-        contact = torch.norm(forces, dim=-1).amax(dim=1) > 1.0
-
-        # A reset lands after the reward is computed, so the flag raised on the
-        # terminal step is consumed here, on the first step of the new episode.
-        fresh = ~self.started | self.pending_reset
-        dones = getattr(getattr(env, "termination_manager", None), "dones", None)
-        self.pending_reset = dones.bool().clone() if dones is not None else torch.zeros_like(self.started)
-        if bool(fresh.any()):
-            self.prev_contact[fresh] = contact[fresh]
-            self.last_td_foot[fresh] = -1
-            self.started |= fresh
-
-        n_contact = contact.sum(dim=1)
-
-        # Isaac Lab zeroes current_air_time on touchdown and moves the elapsed
-        # swing into last_air_time, so the credit must read last_air_time.
-        air_time = sensor.data.last_air_time[:, self.sensor_cfg.body_ids]
-        air_time = torch.nan_to_num(air_time, nan=0.0, posinf=0.0, neginf=0.0)
-        touchdown = contact & ~self.prev_contact
-        simultaneous = touchdown.all(dim=1)
-
-        credit = torch.zeros_like(self.touchdown_credit)
-        for foot in (0, 1):
-            hit = touchdown[:, foot] & ~simultaneous
-            if not bool(hit.any()):
-                continue
-            alternating = hit & (self.last_td_foot != foot)
-            credit = torch.where(alternating, air_time[:, foot], credit)
-            self.last_td_foot[hit] = foot
-        if bool(simultaneous.any()):
-            self.last_td_foot[simultaneous] = -1
-        self.touchdown_credit = credit
-        self.prev_contact = contact
-        return self
-
-
-def _gait_tracker(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg):
-    tracker = getattr(env, "_walk_gait_tracker", None)
-    if tracker is None:
-        tracker = _GaitTracker(env, sensor_cfg)
-        env._walk_gait_tracker = tracker
-    return tracker.update(env)
-
-
-def feet_air_time_biped(
-    env: ManagerBasedRLEnv,
-    threshold: float,
-    sensor_cfg: SceneEntityCfg,
-    command_name: str | None = None,
-    command_deadband: float = 0.05,
-) -> torch.Tensor:
-    tracker = _gait_tracker(env, sensor_cfg)
-    reward = torch.clamp(tracker.touchdown_credit, min=0.0, max=threshold)
-    if command_name is not None:
-        command = env.command_manager.get_command(command_name)
-        reward = reward * (torch.linalg.norm(command, dim=1) > command_deadband)
-    return reward
 
 
 def stand_still_airborne(
@@ -815,55 +625,6 @@ def unstable_joint_vel(
     return _outside_limit(asset.data.joint_vel[:, asset_cfg.joint_ids], limit)
 
 
-def feet_gait(
-    env: ManagerBasedRLEnv,
-    period: float,
-    offset: list[float],
-    sensor_cfg: SceneEntityCfg,
-    threshold: float = 0.55,
-    command_name: str | None = None,
-    command_deadband: float = 0.05,
-) -> torch.Tensor:
-    """Reward a contact pattern that matches a fixed-period gait clock."""
-    sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-    contact_time = torch.nan_to_num(
-        sensor.data.current_contact_time[:, sensor_cfg.body_ids], nan=0.0, posinf=0.0, neginf=0.0
-    )
-    is_contact = contact_time > 0.0
-    global_phase = ((env.episode_length_buf * env.step_dt) % period / period).unsqueeze(1)
-    leg_phase = torch.cat([(global_phase + value) % 1.0 for value in offset], dim=-1)
-
-    # body_ids is a slice when the sensor already covers exactly the wanted bodies
-    reward = torch.zeros(env.num_envs, device=env.device)
-    for index in range(is_contact.shape[1]):
-        is_stance = leg_phase[:, index] < threshold
-        reward = reward + (~(is_stance ^ is_contact[:, index])).float()
-    if command_name is not None:
-        command = env.command_manager.get_command(command_name)
-        reward = reward * (torch.linalg.norm(command, dim=1) > command_deadband)
-    return reward
-
-
-def feet_clearance_l2(
-    env: ManagerBasedRLEnv,
-    target_height: float,
-    sensor_cfg: SceneEntityCfg,
-    asset_cfg: SceneEntityCfg,
-    threshold: float = 1.0,
-    scale: float = 0.0018,
-) -> torch.Tensor:
-    """Penalize a swing foot that is not at the target height.
-
-    Gated on contact rather than on horizontal foot speed: a velocity weight
-    collapses to zero when the robot shuffles without translating, which hands
-    out a near-perfect score for never lifting the foot at all.
-    """
-    contacts = _contact_mask(env, sensor_cfg, threshold)
-    asset: Articulation = env.scene[asset_cfg.name]
-    foot_height = asset.data.body_pos_w[:, asset_cfg.body_ids, 2] - env.scene.env_origins[:, 2].unsqueeze(1)
-    error = _bounded_square(foot_height - target_height, 1.0)
-    return _saturate(torch.sum(error * (~contacts), dim=1), scale)
-
 def feet_clearance_clock_l2(
     env: ManagerBasedRLEnv,
     target_height: float,
@@ -933,8 +694,8 @@ def feet_gait_centred(
 ) -> torch.Tensor:
     """Reward a clock-matching contact pattern, with the planted baseline removed.
 
-    ``feet_gait`` returns one point per leg whose contact state matches the clock, so a
-    robot that simply keeps both feet down still collects ``2 * stance_fraction`` = 1.10
+    An uncentred score of one point per leg whose contact state matches the clock lets a
+    robot that simply keeps both feet down still collect ``2 * stance_fraction`` = 1.10
     of the 2.0 maximum. Rescaling so that the planted pattern scores 0 and a perfect
     gait scores 1 makes the weight the actual anti-shuffle margin; a pattern worse than
     planted now goes negative instead of merely earning less.

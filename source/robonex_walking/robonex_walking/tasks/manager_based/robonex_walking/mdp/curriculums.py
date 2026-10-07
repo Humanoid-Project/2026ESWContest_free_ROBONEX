@@ -36,8 +36,9 @@ def lin_vel_cmd_levels(
     due = env.common_step_counter - last >= env.max_episode_length
     if due and reward > reward_term.weight * success_ratio:
         env._lin_vel_cmd_last_step = env.common_step_counter
-        # widen x and y together, as the G1 reference does: an axis that stops being
-        # sampled is forgotten within a few hundred iterations
+        # widen x, y and yaw together on this one gate (the G1 reference widens x and y
+        # together and yaw on its own gate): an axis that stops being sampled is
+        # forgotten within a few hundred iterations
         for axis in ("lin_vel_x", "lin_vel_y", "ang_vel_z"):
             low, high = getattr(ranges, axis)
             lo_limit, hi_limit = getattr(limit_ranges, axis)

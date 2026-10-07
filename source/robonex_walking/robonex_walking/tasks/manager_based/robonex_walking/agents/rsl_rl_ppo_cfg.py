@@ -50,7 +50,7 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
     algorithm = SmoothPpoAlgorithmCfg(
-        hf_gyro_coef = 0.0,
+        hf_gyro_coef = 0.0375,
         hf_closed_loop = True,
         lcp_coef = 0.0,
         value_loss_coef = 1.0,
