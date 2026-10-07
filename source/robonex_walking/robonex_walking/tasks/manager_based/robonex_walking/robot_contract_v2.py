@@ -8,19 +8,29 @@ from robonex_common.motors import RATED_TORQUE
 from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 
 VARIANTS = ("edu", "pro", "max")
-CONSTANTS_PATH = repo_file(
-    DESCRIPTION_REPO_NAMES,
-    "ver2/ver2_constants.json",
-    env_var="ROBONEX_DESCRIPTION_ROOT",
-    anchors=(__file__,),
-)
-CONSTANTS = json.loads(CONSTANTS_PATH.read_text())
+MODEL_VERSION = {"edu": "ver2-2", "pro": "ver2", "max": "ver2"}
+
+
+def _constants(version):
+    path = repo_file(
+        DESCRIPTION_REPO_NAMES,
+        "%s/%s_constants.json" % (version, version),
+        env_var="ROBONEX_DESCRIPTION_ROOT",
+        anchors=(__file__,),
+    )
+    return path, json.loads(path.read_text())
+
+
+CONSTANTS_PATH, CONSTANTS = _constants(MODEL_VERSION["edu"])
+VARIANT_MASS_KG = {variant: _constants(version)[1]["variant_mass_kg"][variant]
+                   for variant, version in MODEL_VERSION.items()}
 
 
 def robot_usd(variant):
+    version = MODEL_VERSION[variant]
     return repo_file(
         DESCRIPTION_REPO_NAMES,
-        "ver2/isaac/%s/closed_loop_mesh/robonex_%s_closed_loop_mesh.usd" % (variant, variant),
+        "%s/isaac/%s/closed_loop_mesh/robonex_%s_closed_loop_mesh.usd" % (version, variant, variant),
         env_var="ROBONEX_DESCRIPTION_ROOT",
         anchors=(__file__,),
     )

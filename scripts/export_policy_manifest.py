@@ -20,7 +20,16 @@ from robonex_common.policy import (
 )
 
 TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
-DESCRIPTION_MODELS = {"ver2_edu": "ver2/mujoco/robot/edu/scene_fixed.xml"}
+DESCRIPTION_MODELS = {"ver2_edu": "ver2-2/mujoco/robot/edu/scene_fixed.xml"}
+SCENE_BY_TRAINED_MODEL = {"/ver2-2/": "ver2-2/mujoco/robot/edu/scene_fixed.xml", "/ver2/": "ver2/mujoco/robot/edu/scene_fixed.xml"}
+
+
+def trained_description_model(saved_env):
+    text = saved_env.read_text()
+    for marker, scene in SCENE_BY_TRAINED_MODEL.items():
+        if "robonex-description" + marker in text:
+            return scene
+    return None
 
 RECEIPT_VERSION = 1
 
@@ -244,6 +253,10 @@ def main():
         raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
     args.robot_model = inferred
     print(f"robot model: {inferred} (inferred from {saved_env})")
+    trained = trained_description_model(saved_env)
+    if args.description_model is None and trained is not None:
+        args.description_model = trained
+        print(f"description model: {trained} (the model the checkpoint was trained on)")
     args.description_model = args.description_model or DESCRIPTION_MODELS[args.robot_model]
     args.task = args.task or TASKS[args.robot_model]
 

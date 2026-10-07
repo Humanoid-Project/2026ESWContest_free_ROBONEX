@@ -30,7 +30,6 @@ from .robot_contract_v2 import (
     ACTUATOR_PARAMETERS,
     BASE_HEIGHT,
     CLOSED_LOOP_DEFAULT_JOINT_POS,
-    CONSTANTS,
     FOOT_ORIGIN_REST_HEIGHT,
     FOOT_ROLL_COEFFS,
     FOOT_ROLL_LIMIT_RAD,
@@ -41,6 +40,7 @@ from .robot_contract_v2 import (
     RATED_TORQUE_SPINNING,
     RATED_TORQUE_STANDSTILL,
     STANCE_WIDTH_DEFAULT,
+    VARIANT_MASS_KG,
     robot_usd,
 )
 
@@ -745,7 +745,7 @@ class RoboNexWalkingV2EnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.max_velocity_iteration_count = 255
 
         self.scene.robot.spawn.usd_path = str(robot_usd(self.variant))
-        mass = CONSTANTS["variant_mass_kg"][self.variant]
+        mass = VARIANT_MASS_KG[self.variant]
         self.rewards.feet_contact_force.params["threshold"] = round(CONTACT_FORCE_LIMIT_BW * mass * GRAVITY, 1)
 
 
