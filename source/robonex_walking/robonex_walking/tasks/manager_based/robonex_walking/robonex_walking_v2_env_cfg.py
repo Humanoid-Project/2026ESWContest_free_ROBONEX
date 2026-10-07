@@ -97,6 +97,7 @@ ACTION_SMOOTHNESS_WEIGHT = -1.0
 ACTION_SMOOTHNESS_SECOND_ORDER = 0.0
 ACTION_SMOOTHNESS_RAMP = (0.2, 300 * 24)
 JOINT_OBS_MAX_DELAY_STEPS = 0
+JOINT_OBS_MIN_DELAY_STEPS = 0
 JOINT_FRICTION_RANGE = {"rs02": (0.05, 0.25), "rs03": (0.2, 0.8)}
 JOINT_STATIC_FRICTION_RATIO = 1.0
 BASE_COM_RANGE = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}
@@ -254,6 +255,7 @@ class ObservationsCfg:
                 "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
                 "field": "pos",
                 "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
+                "min_delay_steps": JOINT_OBS_MIN_DELAY_STEPS,
             },
             # G1 uses Unoise(-0.01, 0.01); a uniform half-width of h has std h/sqrt(3).
             # 0.01 was that half-width copied straight into a Gaussian std field, which
@@ -268,6 +270,7 @@ class ObservationsCfg:
                 "asset_cfg": SceneEntityCfg("robot", joint_names=LEG_JOINTS),
                 "field": "vel",
                 "max_delay_steps": JOINT_OBS_MAX_DELAY_STEPS,
+                "min_delay_steps": JOINT_OBS_MIN_DELAY_STEPS,
             },
             noise=GaussianNoiseCfg(mean=0.0, std=0.75),
         )
