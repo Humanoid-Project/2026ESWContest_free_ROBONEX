@@ -462,6 +462,11 @@ class RewardsCfg:
         params={"std": TARGET_SPEED_STD},
     )
     lin_vel_y = RewTerm(func=mdp.lin_vel_y_l2_bounded, weight=-0.3)
+    track_lin_vel_y_cycle = RewTerm(
+        func=mdp.track_lin_vel_y_cycle_exp,
+        weight=0.0,
+        params={"std": 0.15, "window_steps": 40},
+    )
     track_ang_vel_z = RewTerm(
         func=mdp.track_ang_vel_z_exp,
         weight=1.0,

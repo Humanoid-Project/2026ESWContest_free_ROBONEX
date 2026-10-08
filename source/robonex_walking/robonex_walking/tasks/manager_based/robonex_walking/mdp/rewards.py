@@ -282,6 +282,56 @@ def action_rate_l2_bounded(env: ManagerBasedRLEnv, max_delta_rad: float = 1.0, s
     return _saturate(torch.sum(_bounded_square(target_delta, max_delta_rad), dim=1), scale)
 
 
+class track_lin_vel_y_cycle_exp(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._buf = None
+        self._count = None
+        self._cmd = None
+        self._idx = 0
+        self._step = None
+
+    def reset(self, env_ids=None):
+        if self._buf is None:
+            return
+        if env_ids is None:
+            self._buf.zero_()
+            self._count.zero_()
+            return
+        self._buf[env_ids] = 0.0
+        self._count[env_ids] = 0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        std: float,
+        window_steps: int = 40,
+        max_error: float = 2.0,
+        command_name: str = "base_velocity",
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    ) -> torch.Tensor:
+        command = torch.nan_to_num(env.command_manager.get_command(command_name)[:, 1], nan=0.0)
+        vel_y = _root_lin_vel_yaw_frame(env, asset_cfg)[:, 1]
+        error = torch.clamp(command - vel_y, -max_error, max_error)
+        window = max(1, int(window_steps))
+        if self._buf is None or self._buf.shape != (error.shape[0], window):
+            self._buf = torch.zeros(error.shape[0], window, device=error.device)
+            self._count = torch.zeros(error.shape[0], dtype=torch.long, device=error.device)
+            self._cmd = command.clone()
+            self._idx = 0
+        if self._step != env.common_step_counter:
+            self._step = env.common_step_counter
+            changed = (command - self._cmd).abs() > 1e-6
+            self._buf[changed] = 0.0
+            self._count[changed] = 0
+            self._cmd = command.clone()
+            self._buf[:, self._idx] = error
+            self._idx = (self._idx + 1) % window
+            self._count = torch.clamp(self._count + 1, max=window)
+        mean = self._buf.sum(dim=1) / self._count.clamp(min=1)
+        return torch.exp(-torch.square(mean) / std**2)
+
+
 class action_smoothness_l2(ManagerTermBase):
     def __init__(self, cfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)
