@@ -473,6 +473,47 @@ class StepOrderTest(unittest.TestCase):
                 self.assertGreater(float((requested - held).abs().max()), 0.05)
 
 
+    def test_stalled_plant_gives_a_positive_penalty_from_the_current_held_command(self):
+        ns = {"torch": torch, "JointPositionAction": FakeJointPositionAction, "ManagerBasedEnv": object,
+              "Sequence": Sequence, "SlewLimitedJointPositionActionCfg": object, "Ver2JointPositionActionCfg": object}
+        load_nodes(ACTIONS, {"slew_limit_step", "foot_roll", "clip_foot_roll",
+                             "SlewLimitedJointPositionAction", "Ver2JointPositionAction"}, ns)
+        num_envs, num_joints = 8, 16
+        joint_ids = [15, 2, 9, 0, 11, 4, 13, 6, 1, 8, 3, 10]
+        asset = FakeAsset(num_envs, num_joints)
+        env = types.SimpleNamespace(scene={"robot": asset}, joint_ids=joint_ids, num_envs=num_envs, step_dt=0.02)
+        cfg = types.SimpleNamespace(
+            max_speed=6.0, max_accel=120.0, slew_enabled=True, foot_roll_limit=math.radians(12.0),
+            foot_roll_coeffs=(-0.001195, 0.498159, 0.491024, -0.105182, -0.031960, 0.006356),
+            foot_roll_pairs=(("l_ankle_upper_joint", "l_ankle_lower_joint", 1.0),
+                             ("r_ankle_upper_joint", "r_ankle_lower_joint", -1.0)),
+        )
+        term = ns["Ver2JointPositionAction"](cfg, env)
+        reward = load_reward()
+        stalled = asset.data.joint_pos[:, joint_ids].clone()
+        positive = 0
+        previous = None
+        for step in range(30):
+            sign = 1.0 if step < 15 else -1.0
+            term.process_actions(torch.full((num_envs, 12), 14.0 * sign))
+            held = term.processed_actions.clone()
+            for _ in range(8):
+                term.apply_actions()
+                asset.data.joint_pos[:, joint_ids] = stalled
+            error = torch.remainder(held - stalled + math.pi, 2.0 * math.pi) - math.pi
+            expected = torch.square(torch.clamp(error.abs() - math.radians(20.0), min=0.0)).sum(dim=1)
+            out = reward(env, asset_cfg=scene_entity("robot", joint_ids))
+            torch.testing.assert_close(out, expected)
+            if float(expected.min()) > 0.0:
+                positive += 1
+                if previous is not None and not torch.equal(previous, held):
+                    stale = torch.remainder(previous - stalled + math.pi, 2.0 * math.pi) - math.pi
+                    stale_expected = torch.square(torch.clamp(stale.abs() - math.radians(20.0), min=0.0)).sum(dim=1)
+                    self.assertFalse(torch.allclose(out, stale_expected))
+            previous = held
+        self.assertGreater(positive, 5)
+
+
 class SentTrackingMetricsTest(unittest.TestCase):
     def setUp(self):
         self.tracking = load_module("tracking_metrics_under_test", TRACKING)
