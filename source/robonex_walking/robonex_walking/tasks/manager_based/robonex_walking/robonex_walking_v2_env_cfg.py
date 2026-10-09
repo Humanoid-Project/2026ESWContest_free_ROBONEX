@@ -356,7 +356,7 @@ class EventCfg:
 
     # Push Robot
     push_robot = EventTerm(
-        func=mdp.push_by_setting_velocity,
+        func=mdp.push_robot_with_sway_marker,
         mode="interval",
         interval_range_s=(10.0, 15.0),
         params={
@@ -368,7 +368,7 @@ class EventCfg:
     )
 
     push_standing = EventTerm(
-        func=mdp.push_standing_by_setting_velocity,
+        func=mdp.push_standing_with_sway_marker,
         mode="interval",
         interval_range_s=STANDING_PUSH_INTERVAL_S,
         params={
@@ -500,6 +500,10 @@ class RewardsCfg:
     )
     lin_vel_z = RewTerm(func=mdp.lin_vel_z_l2_bounded, weight=-0.1)
     ang_vel_xy = RewTerm(func=mdp.ang_vel_xy_l2_bounded, weight=-0.1)
+    ang_vel_xy_push_gated = RewTerm(
+        func=mdp.ang_vel_xy_push_gated, weight=0.0,
+        params={"scale": 0.5, "recovery_s": 1.5},
+    )
 
     # Foot placement
     feet_width = RewTerm(

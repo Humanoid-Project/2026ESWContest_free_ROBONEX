@@ -311,8 +311,8 @@ class WiringTest(unittest.TestCase):
         })
 
     def test_push_events_are_unchanged(self):
-        self.assertEqual(ast.unparse(event_term("push_robot")["func"]), "mdp.push_by_setting_velocity")
-        self.assertEqual(ast.unparse(event_term("push_standing")["func"]), "mdp.push_standing_by_setting_velocity")
+        self.assertEqual(ast.unparse(event_term("push_robot")["func"]), "mdp.push_robot_with_sway_marker")
+        self.assertEqual(ast.unparse(event_term("push_standing")["func"]), "mdp.push_standing_with_sway_marker")
 
 
 def update_class_from_dict():

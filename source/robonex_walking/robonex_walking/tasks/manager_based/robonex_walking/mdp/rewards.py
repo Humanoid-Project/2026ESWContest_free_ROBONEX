@@ -15,6 +15,9 @@ from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.utils.math import quat_apply_inverse, wrap_to_pi, yaw_quat
 
+from isaaclab.envs.mdp.events import push_by_setting_velocity as _push_by_setting_velocity
+from .events import push_standing_by_setting_velocity as _push_standing_by_setting_velocity
+
 from .joint_speed import joint_speed_excess
 from .tracking import SentTrackingGateStats, sent_tracking_error
 
@@ -190,6 +193,67 @@ def ang_vel_xy_l2_bounded(
 ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
     return _saturate(torch.sum(_bounded_square(asset.data.root_ang_vel_b[:, :2], 10.0), dim=1), scale)
+
+
+def _mark_sway_push(env, env_ids):
+    if not hasattr(env, "_sway_last_push_step"):
+        env._sway_last_push_step = torch.full(
+            (env.num_envs,), -1, dtype=torch.long, device=env.device
+        )
+    env._sway_last_push_step[env_ids] = env.common_step_counter
+
+
+def push_robot_with_sway_marker(
+    env, env_ids, velocity_range,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    _push_by_setting_velocity(env, env_ids, velocity_range, asset_cfg)
+    _mark_sway_push(env, env_ids)
+
+
+def push_standing_with_sway_marker(
+    env, env_ids, velocity_range,
+    command_name: str = "base_velocity",
+    command_deadband: float = 0.05,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+):
+    command = env.command_manager.get_command(command_name)[env_ids]
+    standing = env_ids[torch.linalg.norm(command, dim=1) < command_deadband]
+    _push_standing_by_setting_velocity(
+        env, env_ids, velocity_range, command_name, command_deadband, asset_cfg
+    )
+    _mark_sway_push(env, standing)
+
+
+class ang_vel_xy_push_gated(ManagerTermBase):
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        if not hasattr(env, "_sway_last_push_step"):
+            env._sway_last_push_step = torch.full(
+                (env.num_envs,), -1, dtype=torch.long, device=env.device
+            )
+
+    def reset(self, env_ids=None):
+        ids = slice(None) if env_ids is None else env_ids
+        self._env._sway_last_push_step[ids] = -1
+
+    def __call__(
+        self, env,
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        scale: float = 0.5,
+        recovery_s: float = 1.5,
+    ) -> torch.Tensor:
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("scale must be finite and positive")
+        if not math.isfinite(recovery_s) or recovery_s < 0:
+            raise ValueError("recovery_s must be finite and nonnegative")
+        rates = env.scene[asset_cfg.name].data.root_ang_vel_b[:, :2]
+        cost = _saturate(torch.sum(_bounded_square(rates, 10.0), dim=1), scale)
+        last = env._sway_last_push_step
+        age = env.common_step_counter - last
+        grace_steps = math.ceil(recovery_s / env.step_dt)
+        recovery = (last >= 0) & (age >= 0) & (age <= grace_steps) & (grace_steps > 0)
+        return torch.where(recovery, torch.zeros_like(cost), cost)
 
 
 def flat_orientation_l2_bounded(
