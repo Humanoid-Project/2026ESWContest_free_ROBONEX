@@ -619,7 +619,7 @@ def main():
         row["min_margin_rad_min"] = min_margin.amin().item()
         row["clip_frac_low"] = {n: (clip_lo[i] / counted).item() for i, n in enumerate(joint_names)}
         row["clip_frac_high"] = {n: (clip_hi[i] / counted).item() for i, n in enumerate(joint_names)}
-        row["clip_hit_count"] = int(clip_hits.sum().item() * unwrapped.num_envs)
+        row["clip_hit_count"] = int(round(clip_hits.sum().item() * unwrapped.num_envs))
         row["clip_consistent"] = bool(
             (row["clip_hit_count"] > 0) == (row["min_margin_rad_min"] < 0.0)
         )
@@ -643,6 +643,7 @@ def main():
     inference.__exit__(None, None, None)
 
     if args_cli.out:
+        os.makedirs(os.path.dirname(os.path.abspath(args_cli.out)), exist_ok=True)
         with open(args_cli.out, "w", encoding="utf-8") as handle:
             json.dump({"_meta": meta, **results}, handle, indent=2)
         print("wrote %s" % args_cli.out)

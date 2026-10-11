@@ -77,6 +77,20 @@ from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
 from isaaclab_tasks.utils import load_cfg_from_registry, parse_env_cfg
 
 
+def sample_before_reset(unwrapped, env_index, sample):
+    terminal = []
+    compute = unwrapped.termination_manager.compute
+
+    def compute_and_sample():
+        result = compute()
+        if bool(result[env_index]):
+            terminal.append(sample())
+        return result
+
+    unwrapped.termination_manager.compute = compute_and_sample
+    return terminal
+
+
 def main():
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
     com_template = copy.deepcopy(getattr(env_cfg.events, BASE_COM_EVENT, None))
@@ -209,6 +223,27 @@ def main():
     dt = float(unwrapped.step_dt)
     rows = []
     delay_states = []
+
+    def sample_state():
+        return {
+            "delay": observation_delay_state(unwrapped, idx),
+            "grav": asset.data.projected_gravity_b[idx].clone(),
+            "gyro": asset.data.root_ang_vel_b[idx].clone(),
+            "root_p": asset.data.root_pos_w[idx].clone(),
+            "root_v": asset.data.root_lin_vel_b[idx].clone(),
+            "root_v_w": asset.data.root_lin_vel_w[idx].clone(),
+            "body_p": asset.data.body_pos_w[idx].clone(),
+            "force": contact.data.net_forces_w[idx].clone(),
+            "quat": asset.data.root_quat_w[idx].clone(),
+            "foot_quat": asset.data.body_quat_w[idx, foot_ids].clone(),
+            "episode_length": float(unwrapped.episode_length_buf[idx]),
+            "pos": asset.data.joint_pos[idx, joint_ids].clone(),
+            "vel": asset.data.joint_vel[idx, joint_ids].clone(),
+            "tau": asset.data.applied_torque[idx, joint_ids].clone(),
+            "tgt": asset.data.joint_pos_target[idx, joint_ids].clone(),
+        }
+
+    terminal = sample_before_reset(unwrapped, idx, sample_state)
     obs = env.get_observations()
     with torch.inference_mode():
         for step in range(args_cli.warmup_steps + args_cli.measure_steps):
@@ -217,16 +252,19 @@ def main():
             actions = policy(obs)
             raw = actions[idx].clone()
             obs, _, dones, _ = env.step(actions)
+            state = terminal.pop() if terminal else None
             if step < args_cli.warmup_steps:
                 continue
             n = step - args_cli.warmup_steps
-            delay_states.append(observation_delay_state(unwrapped, idx))
-            grav = asset.data.projected_gravity_b[idx]
-            gyro = asset.data.root_ang_vel_b[idx]
-            root_p = asset.data.root_pos_w[idx]
-            root_v = asset.data.root_lin_vel_b[idx]
-            body_p = asset.data.body_pos_w[idx]
-            force = contact.data.net_forces_w[idx]
+            if state is None:
+                state = sample_state()
+            delay_states.append(state["delay"])
+            grav = state["grav"]
+            gyro = state["gyro"]
+            root_p = state["root_p"]
+            root_v = state["root_v"]
+            body_p = state["body_p"]
+            force = state["force"]
             origin = unwrapped.scene.env_origins[idx]
             row = [round(n * dt, 4), n, round(dt * 1000.0, 3), 1.0,
                    *command,
@@ -234,8 +272,8 @@ def main():
                    *[round(float(v), 5) for v in gyro],
                    *[round(float(root_p[k] - origin[k]), 5) for k in range(3)],
                    round(float(root_v[0]), 5), round(float(root_v[1]), 5),
-                   round(float(asset.data.root_lin_vel_w[idx, 0]), 5),
-                   round(float(asset.data.root_lin_vel_w[idx, 1]), 5)]
+                   round(float(state["root_v_w"][0]), 5),
+                   round(float(state["root_v_w"][1]), 5)]
             for b in foot_ids:
                 row += [round(float(body_p[b, k] - origin[k]), 5) for k in range(3)]
             for b in hip_ids:
@@ -243,25 +281,25 @@ def main():
             for c in contact_ids:
                 row += [round(float(force[c, k]), 4) for k in range(3)]
 
-            quat = asset.data.root_quat_w[idx]
+            quat = state["quat"]
             rel = body_p[foot_ids] - root_p.unsqueeze(0)
             foot_b = math_utils.quat_apply_inverse(quat.unsqueeze(0).expand(2, -1), rel)
-            fq = asset.data.body_quat_w[idx, foot_ids]
+            fq = state["foot_quat"]
             corner_z = math_utils.quat_apply(
                 fq.unsqueeze(1).expand(-1, sole.shape[0], -1), sole.unsqueeze(0).expand(2, -1, -1)
             )[..., 2]
             sole_z = (body_p[foot_ids, 2].unsqueeze(-1) + corner_z).amin(dim=-1) - origin[2]
-            gphase = (float(unwrapped.episode_length_buf[idx]) * dt) % GAIT_PERIOD_S / GAIT_PERIOD_S
+            gphase = (state["episode_length"] * dt) % GAIT_PERIOD_S / GAIT_PERIOD_S
             row += [round(float(root_v[2]), 5),
                     round(float(foot_b[0, 1]), 5), round(float(foot_b[1, 1]), 5),
                     round(float(torch.abs(foot_b[0, 1] - foot_b[1, 1])), 5),
                     round(float(sole_z[0]), 5), round(float(sole_z[1]), 5),
                     round(gphase % 1.0, 5), round((gphase + 0.5) % 1.0, 5), int(dones[idx])]
 
-            pos = asset.data.joint_pos[idx, joint_ids]
-            vel = asset.data.joint_vel[idx, joint_ids]
-            tau = asset.data.applied_torque[idx, joint_ids]
-            tgt = asset.data.joint_pos_target[idx, joint_ids]
+            pos = state["pos"]
+            vel = state["vel"]
+            tau = state["tau"]
+            tgt = state["tgt"]
             pre = act_offset + act_scale * torch.clamp(raw, -runner_clip, runner_clip)
             if clip is not None:
                 excess = pre - torch.clamp(pre, clip[..., 0], clip[..., 1])

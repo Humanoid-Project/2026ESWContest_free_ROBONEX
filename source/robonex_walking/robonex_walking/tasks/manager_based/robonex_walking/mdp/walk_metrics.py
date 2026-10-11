@@ -223,6 +223,9 @@ class WalkMetrics:
             "Gait/double_stance_frac_moving": (
                 self.moving_phase_steps[1] / torch.clamp(self.moving_steps, min=1.0)
             ).item(),
+            "Gait/flight_frac_moving": (
+                self.moving_phase_steps[2] / torch.clamp(self.moving_steps, min=1.0)
+            ).item(),
             "Gait/moving_sample_frac": (self.moving_steps / steps).item(),
             "Gait/touchdown_hz_l": (self.td_count[0] / seconds).item(),
             "Gait/touchdown_hz_r": (self.td_count[1] / seconds).item(),

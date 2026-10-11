@@ -129,6 +129,23 @@ class WalkMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(log["Gait/single_stance_frac"], 0.25, places=6)
         self.assertAlmostEqual(log["Gait/flight_frac"], 0.25, places=6)
 
+    def test_flight_fraction_while_moving(self):
+        env = make_env(num_envs=2)
+        command = torch.tensor([[0.3, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        env.command_manager = SimpleNamespace(
+            active_terms=["base_velocity"], get_command=lambda name: command
+        )
+        metrics = WalkMetrics(env, REST, DT)
+        seq = [[[0, 0], [0, 0]], [[1, 0], [0, 0]], [[1, 1], [0, 0]], [[0, 0], [0, 0]]]
+        drive(metrics, env, seq)
+        log = metrics.take_log()
+        self.assertAlmostEqual(log["Gait/flight_frac_moving"], 0.5, places=6)
+        self.assertAlmostEqual(log["Gait/flight_frac"], 0.75, places=6)
+        self.assertAlmostEqual(
+            log["Gait/single_stance_frac_moving"] + log["Gait/double_stance_frac_moving"]
+            + log["Gait/flight_frac_moving"], 1.0, places=6
+        )
+
     def test_duty_ratio(self):
         seq = [[1, 0], [1, 0], [1, 1], [0, 1]]
         drive(self.metrics, self.env, seq)

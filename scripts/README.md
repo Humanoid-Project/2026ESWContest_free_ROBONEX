@@ -10,7 +10,7 @@ Current source inventory (2026-09-05). This page documents accepted arguments; i
 | `--output` | `None` | Manifest destination; defaults to policy_manifest.json beside the policy.  |
 | `--description-root` | `None` | Description checkout override; otherwise resolver/environment/sibling lookup.  |
 | `--common-root` | `None` | Local common checkout used for Git provenance; still needed despite tag-pip installation.  |
-| `--description-model` | `Auto-detected` | Model path relative to the description checkout; defaults to the robot model's scene (`ver2_edu`: `ver2/mujoco/robot/edu/scene_fixed.xml`).  |
+| `--description-model` | `Auto-detected` | Model path relative to the description checkout; defaults to the free-base scene of the model the checkpoint was trained on, else the robot model's scene (`ver2_edu`: `ver2-2/mujoco/robot/edu/scene.xml`); prints a warning to stderr when it names another model.  |
 | `--checkpoint` | `Required` | The `.pt` the ONNX came from. Its `params/env.yaml` supplies the action normalisation and decides the robot model.  |
 | `--robot-model` | `None` | `ver2_edu`. Inferred from the checkpoint (exactly one robonex-common profile must match its actions and foot-roll clip); if given, it must agree.  |
 | `--actions-from-checkpoint` | `False` | Kept for older commands; the saved actions are always used when `--checkpoint` is given.  |

@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from robonex_common.joints import POLICY_JOINT_ORDER
@@ -20,8 +21,8 @@ from robonex_common.policy import (
 )
 
 TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
-DESCRIPTION_MODELS = {"ver2_edu": "ver2-2/mujoco/robot/edu/scene_fixed.xml"}
-SCENE_BY_TRAINED_MODEL = {"/ver2-2/": "ver2-2/mujoco/robot/edu/scene_fixed.xml", "/ver2/": "ver2/mujoco/robot/edu/scene_fixed.xml"}
+DESCRIPTION_MODELS = {"ver2_edu": "ver2-2/mujoco/robot/edu/scene.xml"}
+SCENE_BY_TRAINED_MODEL = {"/ver2-2/": "ver2-2/mujoco/robot/edu/scene.xml", "/ver2/": "ver2/mujoco/robot/edu/scene.xml"}
 
 
 def trained_description_model(saved_env):
@@ -30,6 +31,12 @@ def trained_description_model(saved_env):
         if "robonex-description" + marker in text:
             return scene
     return None
+
+
+def description_model_warning(requested, trained):
+    if requested is None or trained is None or requested.split("/")[0] == trained.split("/")[0]:
+        return None
+    return f"WARNING: --description-model {requested}, but the checkpoint was trained on {trained}"
 
 RECEIPT_VERSION = 1
 
@@ -254,6 +261,9 @@ def main():
     args.robot_model = inferred
     print(f"robot model: {inferred} (inferred from {saved_env})")
     trained = trained_description_model(saved_env)
+    warning = description_model_warning(args.description_model, trained)
+    if warning is not None:
+        print(warning, file=sys.stderr)
     if args.description_model is None and trained is not None:
         args.description_model = trained
         print(f"description model: {trained} (the model the checkpoint was trained on)")

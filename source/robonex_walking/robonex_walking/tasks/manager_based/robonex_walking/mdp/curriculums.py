@@ -16,6 +16,7 @@ def lin_vel_cmd_levels(
     command_name: str = "base_velocity",
     delta: float = 0.1,
     success_ratio: float = 0.8,
+    gate: str = "legacy",
 ) -> float:
     """Widen the velocity command once tracking is good enough.
 
@@ -27,15 +28,33 @@ def lin_vel_cmd_levels(
     ranges = command_term.cfg.ranges
     limit_ranges = command_term.cfg.limit_ranges
     reward_term = env.reward_manager.get_term_cfg(reward_term_name)
-    reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids])
-    reward = reward / env.max_episode_length_s
 
     last = getattr(env, "_lin_vel_cmd_last_step", None)
     if last is None:
         last = env._lin_vel_cmd_last_step = 0
     due = env.common_step_counter - last >= env.max_episode_length
-    if due and reward > reward_term.weight * success_ratio:
-        env._lin_vel_cmd_last_step = env.common_step_counter
+    if gate == "legacy":
+        reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids])
+        reward = reward / env.max_episode_length_s
+        widen = due and reward > reward_term.weight * success_ratio
+        if widen:
+            env._lin_vel_cmd_last_step = env.common_step_counter
+    elif gate == "window":
+        sums = env.reward_manager._episode_sums[reward_term_name][env_ids]
+        ran = env.episode_length_buf[env_ids] > 0
+        window = getattr(env, "_lin_vel_cmd_window", None)
+        if window is None:
+            window = env._lin_vel_cmd_window = torch.zeros(2, device=sums.device)
+        window[0] += torch.sum(sums * ran) / env.max_episode_length_s
+        window[1] += torch.sum(ran)
+        widen = False
+        if due:
+            env._lin_vel_cmd_last_step = env.common_step_counter
+            widen = bool(window[0] / torch.clamp(window[1], min=1.0) > reward_term.weight * success_ratio)
+            window.zero_()
+    else:
+        raise ValueError(f"unknown curriculum gate {gate!r}")
+    if widen:
         # widen x, y and yaw together on this one gate (the G1 reference widens x and y
         # together and yaw on its own gate): an axis that stops being sampled is
         # forgotten within a few hundred iterations
