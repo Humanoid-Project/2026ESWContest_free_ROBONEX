@@ -8,7 +8,7 @@ from robonex_common.motors import RATED_TORQUE
 from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 
 VARIANTS = ("edu", "pro", "max")
-MODEL_VERSION = {"edu": "ver2-2", "pro": "ver2", "max": "ver2"}
+MODEL_VERSION = {"edu": "ver2-3", "pro": "ver2", "max": "ver2"}
 
 
 def _constants(version):

@@ -21,8 +21,8 @@ from robonex_common.policy import (
 )
 
 TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
-DESCRIPTION_MODELS = {"ver2_edu": "ver2-2/mujoco/robot/edu/scene.xml"}
-SCENE_BY_TRAINED_MODEL = {"/ver2-2/": "ver2-2/mujoco/robot/edu/scene.xml", "/ver2/": "ver2/mujoco/robot/edu/scene.xml"}
+DESCRIPTION_MODELS = {"ver2_edu": "ver2-3/mujoco/robot/edu/scene.xml"}
+SCENE_BY_TRAINED_MODEL = {"/ver2-3/": "ver2-3/mujoco/robot/edu/scene.xml", "/ver2-2/": "ver2-2/mujoco/robot/edu/scene.xml", "/ver2/": "ver2/mujoco/robot/edu/scene.xml"}
 
 
 def trained_description_model(saved_env):

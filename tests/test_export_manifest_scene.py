@@ -29,8 +29,10 @@ class ExportSceneTests(unittest.TestCase):
         return path
 
     def test_the_trained_model_maps_to_its_free_base_scene(self):
+        ver23 = self.saved_env("usd_path: /home/x/robonex-description/ver2-3/isaac/edu/closed_loop_mesh/robonex_edu_closed_loop_mesh.usd\n")
         ver22 = self.saved_env("usd_path: /home/x/robonex-description/ver2-2/usd/edu/robonex.usd\n")
         ver2 = self.saved_env("usd_path: /home/x/robonex-description/ver2/usd/edu/robonex.usd\n")
+        self.assertEqual(self.export.trained_description_model(ver23), "ver2-3/mujoco/robot/edu/scene.xml")
         self.assertEqual(self.export.trained_description_model(ver22), "ver2-2/mujoco/robot/edu/scene.xml")
         self.assertEqual(self.export.trained_description_model(ver2), "ver2/mujoco/robot/edu/scene.xml")
         self.assertIsNone(self.export.trained_description_model(self.saved_env("usd_path: other\n")))
