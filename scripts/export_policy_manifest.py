@@ -21,6 +21,7 @@ from robonex_common.policy import (
 )
 
 TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
+POSE_TASKS = {("ver2_edu", "lean25"): "RoboNex-Walking-V2-Edu-Lean25-v0"}
 DESCRIPTION_MODELS = {"ver2_edu": "ver2-3/mujoco/robot/edu/scene.xml"}
 SCENE_BY_TRAINED_MODEL = {"/ver2-3/": "ver2-3/mujoco/robot/edu/scene.xml", "/ver2-2/": "ver2-2/mujoco/robot/edu/scene.xml", "/ver2/": "ver2/mujoco/robot/edu/scene.xml"}
 
@@ -156,13 +157,24 @@ def saved_roll(action):
             tuple((str(p[0]), str(p[1]), float(p[2])) for p in action.get("foot_roll_pairs", ())))
 
 
+def saved_action_pose(saved_env):
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    Loader.add_multi_constructor("", lambda loader, suffix, node: None)
+    return str((yaml.load(saved_env.read_text(), Loader=Loader) or {}).get("action_pose") or "home")
+
+
 def infer_robot_model(saved_env, offsets, scales, clips, tolerance=1.0e-9):
-    from robonex_common.models import ROBOT_MODELS
+    from robonex_common.models import ACTION_POSES, ROBOT_MODELS
 
     roll = saved_roll(saved_action_block(saved_env))
     matches = []
-    for name, profile in ROBOT_MODELS.items():
-        want_offsets, want_scales, want_clips = action_normalization(0.01, model=name)
+    for name, pose in [(n, p) for n in ROBOT_MODELS for p in ("home", *sorted(ACTION_POSES))]:
+        profile = ROBOT_MODELS[name]
+        want_offsets, want_scales, want_clips = action_normalization(0.01, model=name, pose=pose)
         same_actions = all(
             abs(offsets[j] - want_offsets[j]) <= tolerance
             and abs(scales[j] - want_scales[j]) <= tolerance
@@ -172,7 +184,7 @@ def infer_robot_model(saved_env, offsets, scales, clips, tolerance=1.0e-9):
         want_roll = (0.0, (), ()) if profile.foot_roll is None else (
             profile.foot_roll.limit, tuple(profile.foot_roll.coeffs), tuple(tuple(p) for p in profile.foot_roll.pairs))
         if same_actions and roll == want_roll:
-            matches.append(name)
+            matches.append((name, pose))
     if len(matches) != 1:
         raise SystemExit(
             f"{saved_env}: the saved action normalisation and foot-roll clip match {len(matches)} robonex-common robot "
@@ -255,11 +267,13 @@ def main():
     if not saved_env.is_file():
         raise SystemExit(f"{saved_env} is missing; the export cannot be checked against the run")
     offsets, scales, clips = saved_action_normalization(saved_env)
-    inferred = infer_robot_model(saved_env, offsets, scales, clips)
+    inferred, pose = infer_robot_model(saved_env, offsets, scales, clips)
+    if saved_action_pose(saved_env) != pose:
+        raise SystemExit(f"{saved_env}: action_pose {saved_action_pose(saved_env)!r}, but its offsets match pose {pose!r}")
     if args.robot_model is not None and args.robot_model != inferred:
         raise SystemExit(f"--robot-model {args.robot_model}, but the checkpoint was trained as {inferred}")
     args.robot_model = inferred
-    print(f"robot model: {inferred} (inferred from {saved_env})")
+    print(f"robot model: {inferred}, action pose: {pose} (inferred from {saved_env})")
     trained = trained_description_model(saved_env)
     warning = description_model_warning(args.description_model, trained)
     if warning is not None:
@@ -268,7 +282,7 @@ def main():
         args.description_model = trained
         print(f"description model: {trained} (the model the checkpoint was trained on)")
     args.description_model = args.description_model or DESCRIPTION_MODELS[args.robot_model]
-    args.task = args.task or TASKS[args.robot_model]
+    args.task = args.task or (TASKS[args.robot_model] if pose == "home" else POSE_TASKS[(args.robot_model, pose)])
 
     roll = robot_model(args.robot_model).foot_roll
     roll_fields = dict(
@@ -276,6 +290,7 @@ def main():
         foot_roll_limit=roll.limit,
         foot_roll_coeffs=tuple(roll.coeffs),
         foot_roll_pairs=tuple(tuple(pair) for pair in roll.pairs),
+        action_pose=pose,
     )
     contract = PolicyContract(
         schema_version=3,

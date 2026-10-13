@@ -1,9 +1,11 @@
 import json
 import math
+from pathlib import Path
 
 from robonex_common.actuators import ACTUATOR_PARAMETERS
 from robonex_common.joints import ACTUATED_JOINTS
 from robonex_common.limits import DEFAULT_ACTION_MARGIN_RAD, RUNNER_ACTION_CLIP, MAX_ACTION_SCALE_RAD, ACTION_REACH_SIGMA
+from robonex_common.models import action_pose as common_action_pose
 from robonex_common.motors import RATED_TORQUE
 from robonex_common.paths import DESCRIPTION_REPO_NAMES, repo_file
 
@@ -91,6 +93,25 @@ def action_normalization(margin=DEFAULT_ACTION_MARGIN_RAD):
 
 ACTION_OFFSETS, ACTION_SCALES, ACTION_CLIPS = action_normalization(0.01)
 
+
+def pose_contract(pose):
+    if pose == "home":
+        return dict(ACTION_OFFSETS), dict(CLOSED_LOOP_DEFAULT_JOINT_POS), BASE_HEIGHT
+    path = Path(__file__).with_name("action_poses_%s.json" % MODEL_VERSION["edu"])
+    data = json.loads(path.read_text())[pose]
+    actuated = common_action_pose("ver2_edu", pose)
+    for name in LEG_JOINTS:
+        if abs(actuated[name] - data["default_actuated_pos"][name]) > 1e-12:
+            raise ValueError(f"{path.name} {pose}: {name} differs from robonex-common")
+        lower, upper = ACTION_CLIPS[name]
+        if not lower <= actuated[name] <= upper:
+            raise ValueError(f"{pose}: {name} default is outside its target clip")
+    offsets = {name: actuated[name] for name in LEG_JOINTS}
+    passive = {_isaac_passive_name(n): v for n, v in data["home_passive_pos"].items()}
+    if set(passive) != set(CLOSED_LOOP_DEFAULT_JOINT_POS) - set(offsets):
+        raise ValueError(f"{path.name} {pose}: passive joints differ from the home pose")
+    return offsets, {**offsets, **passive}, float(data["home_base_height"])
+
 __all__ = [
     "ACTION_CLIPS",
     "ACTION_OFFSETS",
@@ -112,5 +133,6 @@ __all__ = [
     "RATED_TORQUE_STANDSTILL",
     "STANCE_WIDTH_DEFAULT",
     "VARIANTS",
+    "pose_contract",
     "robot_usd",
 ]

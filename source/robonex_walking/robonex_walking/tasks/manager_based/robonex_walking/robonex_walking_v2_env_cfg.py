@@ -41,6 +41,7 @@ from .robot_contract_v2 import (
     RATED_TORQUE_STANDSTILL,
     STANCE_WIDTH_DEFAULT,
     VARIANT_MASS_KG,
+    pose_contract,
     robot_usd,
 )
 
@@ -736,6 +737,7 @@ class CurriculumCfg:
 @configclass
 class RoboNexWalkingV2EnvCfg(ManagerBasedRLEnvCfg):
     variant: str = "edu"
+    action_pose: str = "home"
     foot_origin_rest_height: float = FOOT_ORIGIN_REST_HEIGHT
     foot_sole_corners: tuple = FOOT_SOLE_CORNERS
 
@@ -768,6 +770,11 @@ class RoboNexWalkingV2EnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.max_velocity_iteration_count = 255
 
         self.scene.robot.spawn.usd_path = str(robot_usd(self.variant))
+        if self.action_pose != "home":
+            offsets, joint_pos, height = pose_contract(self.action_pose)
+            self.actions.joint_pos.offset = offsets
+            self.scene.robot.init_state.joint_pos = joint_pos
+            self.scene.robot.init_state.pos = (0.0, 0.0, height)
         mass = VARIANT_MASS_KG[self.variant]
         self.rewards.feet_contact_force.params["threshold"] = round(CONTACT_FORCE_LIMIT_BW * mass * GRAVITY, 1)
 
@@ -775,6 +782,12 @@ class RoboNexWalkingV2EnvCfg(ManagerBasedRLEnvCfg):
 @configclass
 class RoboNexWalkingV2EduEnvCfg(RoboNexWalkingV2EnvCfg):
     variant: str = "edu"
+
+
+@configclass
+class RoboNexWalkingV2EduLean25EnvCfg(RoboNexWalkingV2EnvCfg):
+    variant: str = "edu"
+    action_pose: str = "lean25"
 
 
 @configclass

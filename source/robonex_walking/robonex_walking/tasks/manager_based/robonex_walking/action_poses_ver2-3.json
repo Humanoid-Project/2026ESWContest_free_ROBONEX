@@ -1,0 +1,45 @@
+{
+  "lean25": {
+    "lean_deg": 2.5,
+    "generator": "robonex-walking/etc/delegates/2026-10-13_lean_pose/lean_solve.py (robonex-description model_tools Loops.solve, ver2-3 scene_fixed)",
+    "solve_residual_m": 2.220446049250313e-16,
+    "com_ahead_of_ankle_axes_mm": 60.35,
+    "home_base_height": 0.93992,
+    "default_actuated_pos": {
+      "l_hip_yaw_joint": 0.0,
+      "l_hip_pitch_joint": 0.05636676870014177,
+      "l_hip_roll_joint": 0.0,
+      "l_ankle_upper_joint": 0.26360239061518426,
+      "l_ankle_lower_joint": -0.251384634679901,
+      "l_knee_pitch_joint": -0.32986569515650194,
+      "r_hip_yaw_joint": 0.0,
+      "r_hip_pitch_joint": -0.05636676870014177,
+      "r_hip_roll_joint": 0.0,
+      "r_ankle_lower_joint": 0.251384634679901,
+      "r_ankle_upper_joint": -0.26360239061518426,
+      "r_knee_pitch_joint": 0.32986569515650194
+    },
+    "home_passive_pos": {
+      "l_knee_joint": -0.29669738997365275,
+      "l_knee_coupler_joint_a": 0.41880914161522376,
+      "l_ankle_roll_joint": 7.678220622357077e-05,
+      "l_ankle_pitch_joint": 0.24032274400538853,
+      "l_ankle_coupler_joint_a_x": 4.1669171863961895e-05,
+      "l_ankle_coupler_joint_a_y": 0.20752307694864103,
+      "l_ankle_coupler_joint_a_z": -0.0005556788443727808,
+      "l_ankle_coupler_joint_b_x": 1.9254166173502322e-05,
+      "l_ankle_coupler_joint_b_y": 0.22803607543852153,
+      "l_ankle_coupler_joint_b_z": 3.775063932681515e-06,
+      "r_knee_joint": 0.2966964239731785,
+      "r_knee_coupler_joint_a": 0.4188112582103691,
+      "r_ankle_roll_joint": 7.671789094543978e-05,
+      "r_ankle_pitch_joint": 0.2403373179717833,
+      "r_ankle_coupler_joint_a_x": 3.5688267514679463e-05,
+      "r_ankle_coupler_joint_a_y": 0.20751931285834338,
+      "r_ankle_coupler_joint_a_z": -0.00014067610886455236,
+      "r_ankle_coupler_joint_b_x": 2.4849496712164718e-05,
+      "r_ankle_coupler_joint_b_y": 0.22804359409720565,
+      "r_ankle_coupler_joint_b_z": -0.0004398982149591017
+    }
+  }
+}

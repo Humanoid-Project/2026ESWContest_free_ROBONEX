@@ -23,3 +23,13 @@ for _variant in ("Edu", "Pro", "Max"):
             "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:V2{_variant}PPORunnerCfg",
         },
     )
+
+gym.register(
+    id="RoboNex-Walking-V2-Edu-Lean25-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.robonex_walking_v2_env_cfg:RoboNexWalkingV2EduLean25EnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:V2EduPPORunnerCfg",
+    },
+)
