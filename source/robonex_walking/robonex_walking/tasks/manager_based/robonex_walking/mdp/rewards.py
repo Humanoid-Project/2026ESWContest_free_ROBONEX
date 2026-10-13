@@ -918,7 +918,7 @@ class com_forward_margin_l2(ManagerTermBase):
         target: float = 0.065,
         scale: float = 0.02,
         tau_s: float = 0.8,
-        recovery_gate: tuple[float, float, float] | None = None,
+        recovery_gate: tuple[float, float, float, float] | None = None,
         asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
         foot_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["l_foot", "r_foot"]),
     ) -> torch.Tensor:
