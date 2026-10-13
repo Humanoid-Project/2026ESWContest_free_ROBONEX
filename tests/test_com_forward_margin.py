@@ -124,6 +124,8 @@ class ComForwardMarginTest(unittest.TestCase):
         kw = {k.arg: k.value for k in term.value.keywords}
         self.assertEqual(ast.unparse(kw["func"]), "mdp.com_forward_margin_l2")
         self.assertEqual(ast.literal_eval(kw["weight"]), 0.0)
+        params = {ast.literal_eval(k): v for k, v in zip(kw["params"].keys, kw["params"].values)}
+        self.assertNotIn("recovery_gate", params)
 
 
 if __name__ == "__main__":

@@ -629,7 +629,6 @@ class RewardsCfg:
             "target": 0.065,
             "scale": 0.02,
             "tau_s": 0.8,
-            "recovery_gate": RECOVERY_GATE,
             "asset_cfg": SceneEntityCfg("robot"),
             "foot_cfg": SceneEntityCfg("robot", body_names=["l_foot", "r_foot"], preserve_order=True),
         },
