@@ -4,7 +4,6 @@
     "generator": "robonex-walking/etc/delegates/2026-10-13_lean_pose/lean_solve.py (robonex-description model_tools Loops.solve, ver2-3 scene_fixed)",
     "solve_residual_m": 2.220446049250313e-16,
     "com_ahead_of_ankle_axes_mm": 60.35,
-    "home_base_height": 0.93992,
     "default_actuated_pos": {
       "l_hip_yaw_joint": 0.0,
       "l_hip_pitch_joint": 0.05636676870014177,
@@ -19,7 +18,8 @@
       "r_ankle_upper_joint": -0.26360239061518426,
       "r_knee_pitch_joint": 0.32986569515650194
     },
-    "home_passive_pos": {
+    "base_height": 0.93992,
+    "passive_pos": {
       "l_knee_joint": -0.29669738997365275,
       "l_knee_coupler_joint_a": 0.41880914161522376,
       "l_ankle_roll_joint": 7.678220622357077e-05,

@@ -172,6 +172,8 @@ class delayed_imu_projected_gravity_biased(ManagerTermBase):
         self.reset()
 
     def reset(self, env_ids=None):
+        if not self._active:
+            return
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device)
         env_ids = torch.as_tensor(env_ids, device=self.device)

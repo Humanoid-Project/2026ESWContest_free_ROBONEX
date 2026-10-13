@@ -282,7 +282,10 @@ def main():
         args.description_model = trained
         print(f"description model: {trained} (the model the checkpoint was trained on)")
     args.description_model = args.description_model or DESCRIPTION_MODELS[args.robot_model]
-    args.task = args.task or (TASKS[args.robot_model] if pose == "home" else POSE_TASKS[(args.robot_model, pose)])
+    pose_task = TASKS[args.robot_model] if pose == "home" else POSE_TASKS[(args.robot_model, pose)]
+    if args.task is not None and args.task != pose_task and (pose != "home" or args.task in POSE_TASKS.values()):
+        raise SystemExit(f"--task {args.task}, but the checkpoint was trained with action pose {pose!r} ({pose_task})")
+    args.task = args.task or pose_task
 
     roll = robot_model(args.robot_model).foot_roll
     roll_fields = dict(

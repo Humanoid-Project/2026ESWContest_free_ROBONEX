@@ -41,6 +41,16 @@ class GravityBiasTest(unittest.TestCase):
         out = term(env, asset_cfg)
         self.assertIs(out, g)
 
+    def test_inactive_term_draws_no_random_numbers(self):
+        g = torch.tensor([[0.0, 0.0, -1.0]] * 4)
+        torch.manual_seed(7)
+        expected = torch.rand(3)
+        torch.manual_seed(7)
+        term, env, asset_cfg = make(4, g)
+        term.reset()
+        term.reset(torch.tensor([1, 2]))
+        self.assertTrue(torch.equal(torch.rand(3), expected))
+
     def test_offset_rotates_by_the_drawn_angles_and_keeps_unit_length(self):
         g = torch.tensor([[0.0, 0.0, -1.0]] * 3)
         term, env, asset_cfg = make(3, g, offset_deg=3.0)

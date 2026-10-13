@@ -771,7 +771,7 @@ class RoboNexWalkingV2EnvCfg(ManagerBasedRLEnvCfg):
 
         self.scene.robot.spawn.usd_path = str(robot_usd(self.variant))
         if self.action_pose != "home":
-            offsets, joint_pos, height = pose_contract(self.action_pose)
+            offsets, joint_pos, height = pose_contract(self.action_pose, self.variant)
             self.actions.joint_pos.offset = offsets
             self.scene.robot.init_state.joint_pos = joint_pos
             self.scene.robot.init_state.pos = (0.0, 0.0, height)

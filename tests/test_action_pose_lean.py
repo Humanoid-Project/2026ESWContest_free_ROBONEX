@@ -70,6 +70,12 @@ class LeanPoseContractTests(unittest.TestCase):
         with self.assertRaises(Exception):
             self.c.pose_contract("lean99")
 
+    def test_lean_pose_is_refused_for_other_variants(self):
+        for variant in ("pro", "max"):
+            with self.assertRaises(ValueError):
+                self.c.pose_contract("lean25", variant)
+        self.assertEqual(self.c.pose_contract("home", "pro")[2], self.c.BASE_HEIGHT)
+
 
 class LeanTaskWiringTests(unittest.TestCase):
     def test_lean_cfg_sets_the_pose_and_the_base_cfg_defaults_to_home(self):

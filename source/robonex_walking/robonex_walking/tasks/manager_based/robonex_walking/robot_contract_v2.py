@@ -94,9 +94,11 @@ def action_normalization(margin=DEFAULT_ACTION_MARGIN_RAD):
 ACTION_OFFSETS, ACTION_SCALES, ACTION_CLIPS = action_normalization(0.01)
 
 
-def pose_contract(pose):
+def pose_contract(pose, variant="edu"):
     if pose == "home":
         return dict(ACTION_OFFSETS), dict(CLOSED_LOOP_DEFAULT_JOINT_POS), BASE_HEIGHT
+    if variant != "edu":
+        raise ValueError(f"action pose {pose!r} is solved for the edu model {MODEL_VERSION['edu']}, not for {variant}")
     path = Path(__file__).with_name("action_poses_%s.json" % MODEL_VERSION["edu"])
     data = json.loads(path.read_text())[pose]
     actuated = common_action_pose("ver2_edu", pose)
@@ -107,10 +109,10 @@ def pose_contract(pose):
         if not lower <= actuated[name] <= upper:
             raise ValueError(f"{pose}: {name} default is outside its target clip")
     offsets = {name: actuated[name] for name in LEG_JOINTS}
-    passive = {_isaac_passive_name(n): v for n, v in data["home_passive_pos"].items()}
+    passive = {_isaac_passive_name(n): v for n, v in data["passive_pos"].items()}
     if set(passive) != set(CLOSED_LOOP_DEFAULT_JOINT_POS) - set(offsets):
         raise ValueError(f"{path.name} {pose}: passive joints differ from the home pose")
-    return offsets, {**offsets, **passive}, float(data["home_base_height"])
+    return offsets, {**offsets, **passive}, float(data["base_height"])
 
 __all__ = [
     "ACTION_CLIPS",
