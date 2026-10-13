@@ -153,3 +153,50 @@ def delayed_imu_ang_vel(env: ManagerBasedRLEnv, asset_cfg) -> torch.Tensor:
 
 def delayed_imu_projected_gravity(env: ManagerBasedRLEnv, asset_cfg) -> torch.Tensor:
     return env.scene[asset_cfg.name].delayed()[1]
+
+
+class delayed_imu_projected_gravity_biased(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        p = cfg.params
+        self._offset_rad = float(p.get("offset_deg", 0.0)) * torch.pi / 180.0
+        self._sigma_rad = float(p.get("ou_sigma_deg", 0.0)) * torch.pi / 180.0
+        self._tau = float(p.get("ou_tau_s", 2.0))
+        self._clip_rad = float(p.get("clip_deg", 8.0)) * torch.pi / 180.0
+        if self._offset_rad < 0 or self._sigma_rad < 0 or self._tau <= 0 or self._clip_rad <= 0:
+            raise ValueError("projected gravity bias needs offset_deg >= 0, ou_sigma_deg >= 0, ou_tau_s > 0, clip_deg > 0")
+        self._active = self._offset_rad > 0 or self._sigma_rad > 0
+        self._offset = torch.zeros(env.num_envs, 2, device=env.device)
+        self._ou = torch.zeros(env.num_envs, 2, device=env.device)
+        self._counter = None
+        self.reset()
+
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        env_ids = torch.as_tensor(env_ids, device=self.device)
+        n = len(env_ids)
+        self._offset[env_ids] = (torch.rand(n, 2, device=self.device) * 2.0 - 1.0) * self._offset_rad
+        self._ou[env_ids] = torch.randn(n, 2, device=self.device) * self._sigma_rad
+
+    def bias(self):
+        return torch.clamp(self._offset + self._ou, -self._clip_rad, self._clip_rad)
+
+    def __call__(self, env: ManagerBasedRLEnv, asset_cfg, offset_deg: float = 0.0, ou_sigma_deg: float = 0.0,
+                 ou_tau_s: float = 2.0, clip_deg: float = 8.0):
+        gravity = env.scene[asset_cfg.name].delayed()[1]
+        if not self._active:
+            return gravity
+        if self._counter != env.common_step_counter:
+            a = float(torch.exp(torch.tensor(-env.step_dt / self._tau)))
+            self._ou = a * self._ou + self._sigma_rad * (1.0 - a * a) ** 0.5 * torch.randn_like(self._ou)
+            self._counter = env.common_step_counter
+        b = self.bias()
+        cr, sr = torch.cos(b[:, 0]), torch.sin(b[:, 0])
+        cp, sp = torch.cos(b[:, 1]), torch.sin(b[:, 1])
+        x, y, z = gravity[:, 0], gravity[:, 1], gravity[:, 2]
+        y1 = cr * y - sr * z
+        z1 = sr * y + cr * z
+        x2 = cp * x + sp * z1
+        z2 = -sp * x + cp * z1
+        return torch.stack([x2, y1, z2], dim=-1)

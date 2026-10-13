@@ -286,8 +286,8 @@ class ObservationsCfg:
         )
         # Projected gravity (3)
         projected_gravity = ObsTerm(
-            func=mdp.delayed_imu_projected_gravity,
-            params={"asset_cfg": SceneEntityCfg("imu")},
+            func=mdp.delayed_imu_projected_gravity_biased,
+            params={"asset_cfg": SceneEntityCfg("imu"), "offset_deg": 0.0, "ou_sigma_deg": 0.0, "ou_tau_s": 2.0, "clip_deg": 8.0},
             noise=GaussianNoiseCfg(mean=0.0, std=0.025),
         )
 

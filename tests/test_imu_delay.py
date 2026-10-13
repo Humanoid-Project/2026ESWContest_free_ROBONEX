@@ -211,7 +211,7 @@ class ImuDelayTest(unittest.TestCase):
                          ["joint_pos_rel", "joint_vel_rel", "imu_ang_vel", "projected_gravity", "velocity_commands", "gait_phase", "actions"])
         funcs = {name: kw["func"].attr for name, kw in terms}
         self.assertEqual(funcs["imu_ang_vel"], "delayed_imu_ang_vel")
-        self.assertEqual(funcs["projected_gravity"], "delayed_imu_projected_gravity")
+        self.assertEqual(funcs["projected_gravity"], "delayed_imu_projected_gravity_biased")
         for name in ("imu_ang_vel", "projected_gravity"):
             params = dict(terms)[name]["params"]
             asset = dict(zip([ast.literal_eval(k) for k in params.keys], params.values))["asset_cfg"]
