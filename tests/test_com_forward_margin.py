@@ -195,6 +195,9 @@ class ComForwardMarginTest(unittest.TestCase):
         self.assertEqual(ast.literal_eval(kw["weight"]), 0.0)
         params = {ast.literal_eval(k): v for k, v in zip(kw["params"].keys, kw["params"].values)}
         self.assertNotIn("recovery_gate", params)
+        literal = {k: ast.literal_eval(v) for k, v in params.items() if k not in ("asset_cfg", "foot_cfg")}
+        self.assertEqual(literal, {"target": 0.065, "scale": 0.02, "tau_s": 0.8, "standing": "floor", "standing_cap": 0.060,
+                                   "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05})
 
 
 if __name__ == "__main__":
