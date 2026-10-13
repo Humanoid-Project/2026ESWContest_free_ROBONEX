@@ -28,6 +28,8 @@ parser.add_argument("--push_interval", type=float, nargs=2, default=None, metava
                          "trained with another push schedule against its control")
 parser.add_argument("--hip_yaw_kp_nominal", action="store_true",
                     help="Pin the hip-yaw stiffness randomization to scale (1, 1), i.e. the robot's nominal hip-yaw kp")
+parser.add_argument("--gravity_bias_off", action="store_true",
+                    help="Zero the projected-gravity tilt bias (offset and OU drift) of the policy observation")
 parser.add_argument("--no_push", action="store_true",
                     help="Disable the push events (push_robot, push_standing) for a like-for-like comparison across runs")
 parser.add_argument("--obs_delay", type=int, default=0,
@@ -356,6 +358,14 @@ def main():
                 pushes_disabled.append(name)
     push_interval = apply_push_interval(env_cfg, args_cli.push_interval)
     hip_yaw_kp = apply_hip_yaw_kp_nominal(env_cfg, args_cli.hip_yaw_kp_nominal)
+    gravity_bias = None
+    gravity_term = getattr(env_cfg.observations.policy, "projected_gravity", None)
+    if gravity_term is not None and "offset_deg" in (gravity_term.params or {}):
+        if args_cli.gravity_bias_off:
+            gravity_term.params["offset_deg"] = 0.0
+            gravity_term.params["ou_sigma_deg"] = 0.0
+        gravity_bias = {k: gravity_term.params.get(k) for k in ("offset_deg", "ou_sigma_deg", "ou_tau_s", "clip_deg")}
+    print(f"[eval] gravity bias: {gravity_bias}")
     print(f"[eval] hip-yaw kp: {hip_yaw_kp}")
     friction_pinned = None
     if args_cli.joint_friction is not None:
@@ -429,6 +439,7 @@ def main():
             "pushes_disabled": pushes_disabled,
             "push_interval": push_interval,
             "hip_yaw_kp": hip_yaw_kp,
+            "gravity_bias": gravity_bias,
             "joint_friction_pin_nm": friction_pinned,
             "base_com": base_com,
             "base_load": base_load,
