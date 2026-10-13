@@ -173,7 +173,7 @@ class RoboNexWalkingSceneCfg(InteractiveSceneCfg):
     imu = mdp.DelayedImuCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base_link",
         offset=ImuCfg.OffsetCfg(
-            pos=(0.009861, 0.00015, 0.085892),
+            pos=(0.009861, 0.0, -0.085892),
             rot=(1.0, 0.0, 0.0, 0.0),
         ),
         update_period=0.0,
