@@ -940,10 +940,9 @@ class com_forward_margin_l2(ManagerTermBase):
             self._ema = self._ema + alpha * (dx - self._ema)
             fresh = env.episode_length_buf <= 1
             self._ema = torch.where(fresh, dx, self._ema)
-            if standing != "floor":
-                command = env.command_manager.get_command(command_name)
-                still = torch.linalg.norm(command, dim=1) < command_deadband
-                self._still = torch.where(still & ~fresh, self._still + env.step_dt, torch.zeros_like(self._still))
+            command = env.command_manager.get_command(command_name)
+            still = torch.linalg.norm(command, dim=1) < command_deadband
+            self._still = torch.where(still & ~fresh, self._still + env.step_dt, torch.zeros_like(self._still))
         shortfall = torch.clamp(target - self._ema, min=0.0)
         penalty = _saturate(torch.square(shortfall), scale * scale)
         if standing != "floor":

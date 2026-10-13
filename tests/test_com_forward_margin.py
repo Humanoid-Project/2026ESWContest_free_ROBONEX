@@ -167,6 +167,17 @@ class ComForwardMarginTest(unittest.TestCase):
         env.episode_length_buf = torch.tensor([1])
         self.assertEqual(self.advance(term, env, 1, **kw).item(), 0.0)
 
+    def test_the_settle_timer_runs_in_every_mode(self):
+        cls = load()
+        env = Env(1, 0.080)
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing_cap=0.060, settle_s=2.5)
+        self.advance(term, env, 130, standing="cap", **kw)
+        env.command = torch.tensor([[0.3, 0.0, 0.0]])
+        self.advance(term, env, 3, standing="floor", **kw)
+        env.command = torch.zeros(1, 3)
+        self.assertEqual(self.advance(term, env, 1, standing="cap", **kw).item(), 0.0)
+
     def test_floor_mode_is_the_w132_term_and_unknown_modes_are_refused(self):
         cls = load()
         env = Env(1, 0.045)
