@@ -894,6 +894,7 @@ class com_forward_margin_l2(ManagerTermBase):
     def __init__(self, cfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)
         self._ema = None
+        self._still = None
         self._step = None
         self._weights = None
 
@@ -919,20 +920,37 @@ class com_forward_margin_l2(ManagerTermBase):
         scale: float = 0.02,
         tau_s: float = 0.8,
         recovery_gate: tuple[float, float, float, float] | None = None,
+        standing: str = "floor",
+        standing_cap: float = 0.060,
+        settle_s: float = 2.5,
+        command_name: str = "base_velocity",
+        command_deadband: float = 0.05,
         asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
         foot_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["l_foot", "r_foot"]),
     ) -> torch.Tensor:
+        if standing not in ("floor", "cap", "off"):
+            raise ValueError(f"com_forward_margin standing must be floor, cap or off, not {standing!r}")
         dx = self.margin(env, asset_cfg, foot_cfg)
         if self._ema is None or self._ema.shape != dx.shape:
             self._ema = dx.clone()
+            self._still = torch.zeros_like(dx)
         if self._step != env.common_step_counter:
             self._step = env.common_step_counter
             alpha = env.step_dt / (tau_s + env.step_dt)
             self._ema = self._ema + alpha * (dx - self._ema)
             fresh = env.episode_length_buf <= 1
             self._ema = torch.where(fresh, dx, self._ema)
+            if standing != "floor":
+                command = env.command_manager.get_command(command_name)
+                still = torch.linalg.norm(command, dim=1) < command_deadband
+                self._still = torch.where(still & ~fresh, self._still + env.step_dt, torch.zeros_like(self._still))
         shortfall = torch.clamp(target - self._ema, min=0.0)
         penalty = _saturate(torch.square(shortfall), scale * scale)
+        if standing != "floor":
+            settled = self._still >= settle_s - 0.5 * env.step_dt
+            excess = torch.clamp(self._ema - standing_cap, min=0.0)
+            above = _saturate(torch.square(excess), scale * scale) if standing == "cap" else torch.zeros_like(penalty)
+            penalty = torch.where(settled, above, penalty)
         if recovery_gate is not None:
             penalty = penalty * _recovery_quiet(env, *recovery_gate)
         return penalty

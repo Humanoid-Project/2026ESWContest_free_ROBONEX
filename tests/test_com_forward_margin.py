@@ -58,6 +58,8 @@ class Env:
         self.data = types.SimpleNamespace(default_mass=mass, body_com_pos_w=com, body_pos_w=feet,
                                           root_quat_w=quat_yaw(yaw).repeat(n, 1))
         self.scene = {"robot": types.SimpleNamespace(data=self.data)}
+        self.command = torch.zeros(n, 3)
+        self.command_manager = types.SimpleNamespace(get_command=lambda name: self.command)
         self.set(com_x, yaw)
 
     def set(self, com_x, yaw=0.0):
@@ -116,6 +118,62 @@ class ComForwardMarginTest(unittest.TestCase):
         env = Env(1, 0.0)
         term = cls(cfg(), env)
         self.assertEqual(term(env, recovery_gate=(0.2, 0.08, 0.2, 1.5)).item(), 0.0)
+
+    def advance(self, term, env, steps, **kw):
+        out = None
+        for _ in range(steps):
+            env.common_step_counter += 1
+            out = term(env, **kw)
+        return out
+
+    def test_cap_mode_keeps_the_floor_while_moving_and_through_the_settle_window(self):
+        cls = load()
+        env = Env(1, 0.040)
+        env.command = torch.tensor([[0.3, 0.0, 0.0]])
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5)
+        floor = self.advance(term, env, 5, **kw).item()
+        self.assertAlmostEqual(floor, 1 - math.exp(-(0.015 ** 2) / 0.02 ** 2), places=5)
+        env.command = torch.zeros(1, 3)
+        self.assertAlmostEqual(self.advance(term, env, 124, **kw).item(), floor, places=5)
+        self.assertEqual(self.advance(term, env, 1, **kw).item(), 0.0)
+
+    def test_cap_mode_penalises_standing_above_the_cap_only(self):
+        cls = load()
+        env = Env(1, 0.080)
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5)
+        out = self.advance(term, env, 130, **kw).item()
+        self.assertAlmostEqual(out, 1 - math.exp(-(0.020 ** 2) / 0.02 ** 2), places=4)
+        env.set(0.058)
+        term = cls(cfg(), env)
+        self.assertEqual(self.advance(term, env, 130, **kw).item(), 0.0)
+
+    def test_off_mode_drops_the_standing_penalty_and_a_command_restarts_the_floor(self):
+        cls = load()
+        env = Env(1, 0.020)
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="off", settle_s=2.5)
+        self.assertEqual(self.advance(term, env, 130, **kw).item(), 0.0)
+        env.command = torch.tensor([[0.0, 0.2, 0.0]])
+        self.assertGreater(self.advance(term, env, 1, **kw).item(), 0.9)
+
+    def test_fresh_episode_restarts_the_settle_timer(self):
+        cls = load()
+        env = Env(1, 0.080)
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5)
+        self.assertGreater(self.advance(term, env, 130, **kw).item(), 0.0)
+        env.episode_length_buf = torch.tensor([1])
+        self.assertEqual(self.advance(term, env, 1, **kw).item(), 0.0)
+
+    def test_floor_mode_is_the_w132_term_and_unknown_modes_are_refused(self):
+        cls = load()
+        env = Env(1, 0.045)
+        term = cls(cfg(), env)
+        self.assertAlmostEqual(self.advance(term, env, 130).item(), 1 - math.exp(-1.0), places=5)
+        with self.assertRaises(ValueError):
+            term(env, standing="hold")
 
     def test_cfg_term_is_inert_by_default(self):
         tree = ast.parse(ENV_CFG.read_text())
