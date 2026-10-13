@@ -622,6 +622,18 @@ class RewardsCfg:
             "recovery_gate": RECOVERY_GATE,
         },
     )
+    com_forward_margin = RewTerm(
+        func=mdp.com_forward_margin_l2,
+        weight=0.0,
+        params={
+            "target": 0.065,
+            "scale": 0.02,
+            "tau_s": 0.8,
+            "recovery_gate": RECOVERY_GATE,
+            "asset_cfg": SceneEntityCfg("robot"),
+            "foot_cfg": SceneEntityCfg("robot", body_names=["l_foot", "r_foot"], preserve_order=True),
+        },
+    )
     joint_pos_limits = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-5.0,

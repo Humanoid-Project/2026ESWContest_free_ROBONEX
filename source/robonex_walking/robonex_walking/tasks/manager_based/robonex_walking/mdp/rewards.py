@@ -888,3 +888,51 @@ def slew_lag_l2(env: ManagerBasedRLEnv, scale: float = 0.0025, term_name: str = 
     if lag is None:
         return torch.zeros(env.num_envs, device=env.device)
     return _saturate(torch.sum(_bounded_square(lag, 2.0), dim=1), scale)
+
+
+class com_forward_margin_l2(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._ema = None
+        self._step = None
+        self._weights = None
+
+    def reset(self, env_ids=None):
+        return
+
+    def margin(self, env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, foot_cfg: SceneEntityCfg) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        if self._weights is None:
+            mass = asset.data.default_mass.to(env.device)
+            self._weights = mass / mass.sum(dim=1, keepdim=True)
+        com = torch.sum(asset.data.body_com_pos_w * self._weights.unsqueeze(-1), dim=1)
+        feet = asset.data.body_pos_w[:, foot_cfg.body_ids, :].mean(dim=1)
+        offset = com - feet
+        offset[:, 2] = 0.0
+        local = quat_apply_inverse(yaw_quat(asset.data.root_quat_w), offset)
+        return torch.nan_to_num(local[:, 0], nan=0.0, posinf=0.0, neginf=0.0)
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        target: float = 0.065,
+        scale: float = 0.02,
+        tau_s: float = 0.8,
+        recovery_gate: tuple[float, float, float] | None = None,
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+        foot_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["l_foot", "r_foot"]),
+    ) -> torch.Tensor:
+        dx = self.margin(env, asset_cfg, foot_cfg)
+        if self._ema is None or self._ema.shape != dx.shape:
+            self._ema = dx.clone()
+        if self._step != env.common_step_counter:
+            self._step = env.common_step_counter
+            alpha = env.step_dt / (tau_s + env.step_dt)
+            self._ema = self._ema + alpha * (dx - self._ema)
+            fresh = env.episode_length_buf <= 1
+            self._ema = torch.where(fresh, dx, self._ema)
+        shortfall = torch.clamp(target - self._ema, min=0.0)
+        penalty = _saturate(torch.square(shortfall), scale * scale)
+        if recovery_gate is not None:
+            penalty = penalty * _recovery_quiet(env, *recovery_gate)
+        return penalty
