@@ -925,9 +925,12 @@ class com_forward_margin_l2(ManagerTermBase):
         settle_s: float = 2.5,
         command_name: str = "base_velocity",
         command_deadband: float = 0.05,
+        push_grace_s: float = 0.0,
         asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
         foot_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names=["l_foot", "r_foot"]),
     ) -> torch.Tensor:
+        if not math.isfinite(push_grace_s) or push_grace_s < 0:
+            raise ValueError("push_grace_s must be finite and nonnegative")
         if standing not in ("floor", "cap", "off"):
             raise ValueError(f"com_forward_margin standing must be floor, cap or off, not {standing!r}")
         dx = self.margin(env, asset_cfg, foot_cfg)
@@ -952,4 +955,9 @@ class com_forward_margin_l2(ManagerTermBase):
             penalty = torch.where(settled, above, penalty)
         if recovery_gate is not None:
             penalty = penalty * _recovery_quiet(env, *recovery_gate)
+        last = getattr(env, "_sway_last_push_step", None)
+        if push_grace_s > 0 and last is not None:
+            age = env.common_step_counter - last
+            grace = (last >= 0) & (age >= 0) & (age <= math.ceil(push_grace_s / env.step_dt))
+            penalty = torch.where(grace, torch.zeros_like(penalty), penalty)
         return penalty

@@ -186,6 +186,30 @@ class ComForwardMarginTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             term(env, standing="hold")
 
+    def test_push_grace_zeroes_the_penalty_for_its_window_after_a_push(self):
+        cls = load()
+        env = Env(1, 0.020)
+        env.command = torch.tensor([[0.3, 0.0, 0.0]])
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5, push_grace_s=1.7)
+        floor = self.advance(term, env, 5, **kw).item()
+        self.assertGreater(floor, 0.9)
+        env._sway_last_push_step = torch.tensor([env.common_step_counter])
+        self.assertEqual(self.advance(term, env, 85, **kw).item(), 0.0)
+        self.assertAlmostEqual(self.advance(term, env, 1, **kw).item(), floor, places=5)
+
+    def test_push_grace_is_inert_at_zero_and_without_a_marker(self):
+        cls = load()
+        env = Env(1, 0.020)
+        env.command = torch.tensor([[0.3, 0.0, 0.0]])
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, push_grace_s=1.7)
+        self.assertGreater(self.advance(term, env, 3, **kw).item(), 0.9)
+        env._sway_last_push_step = torch.tensor([env.common_step_counter])
+        self.assertGreater(self.advance(term, env, 1, target=0.055, push_grace_s=0.0).item(), 0.9)
+        with self.assertRaises(ValueError):
+            term(env, push_grace_s=-1.0)
+
     def test_cfg_term_is_inert_by_default(self):
         tree = ast.parse(ENV_CFG.read_text())
         rewards = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "RewardsCfg")
@@ -197,7 +221,8 @@ class ComForwardMarginTest(unittest.TestCase):
         self.assertNotIn("recovery_gate", params)
         literal = {k: ast.literal_eval(v) for k, v in params.items() if k not in ("asset_cfg", "foot_cfg")}
         self.assertEqual(literal, {"target": 0.065, "scale": 0.02, "tau_s": 0.8, "standing": "floor", "standing_cap": 0.060,
-                                   "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05})
+                                   "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05,
+                                   "push_grace_s": 0.0})
 
 
 if __name__ == "__main__":

@@ -635,6 +635,7 @@ class RewardsCfg:
             "settle_s": 2.5,
             "command_name": "base_velocity",
             "command_deadband": 0.05,
+            "push_grace_s": 0.0,
             "asset_cfg": SceneEntityCfg("robot"),
             "foot_cfg": SceneEntityCfg("robot", body_names=["l_foot", "r_foot"], preserve_order=True),
         },
