@@ -103,6 +103,25 @@ def pin_joint_friction(env_cfg, levels, func):
     return {model: float(level) for model, level in sorted(levels.items())}
 
 
+FLOOR_FRICTION_EVENT = "randomize_friction"
+
+
+def pin_floor_friction(env_cfg, mu):
+    if mu is None:
+        return None
+    if not mu > 0.0:
+        raise ValueError(f"floor friction must be positive, got {mu}")
+    term = getattr(env_cfg.events, FLOOR_FRICTION_EVENT, None)
+    if term is None:
+        raise KeyError(f"the env has no {FLOOR_FRICTION_EVENT} event to pin")
+    term.params["static_friction_range"] = (float(mu), float(mu))
+    term.params["dynamic_friction_range"] = (float(mu), float(mu))
+    material = env_cfg.scene.ground.spawn.physics_material
+    material.static_friction = float(mu)
+    material.dynamic_friction = float(mu)
+    return {"mu": float(mu), "ground_combine": material.friction_combine_mode}
+
+
 BASE_COM_EVENT = "randomize_base_com"
 BASE_COM_AXES = ("x", "y", "z")
 

@@ -38,6 +38,9 @@ parser.add_argument("--obs_delay_pin", type=int, default=-1,
                     help="For a policy trained with a random joint observation delay: fix that delay at N steps for every env")
 parser.add_argument("--joint_friction", type=float, nargs=2, default=None, metavar=("RS02", "RS03"),
                     help="Fix the Coulomb joint friction (N*m, static = dynamic, no viscous) on every env and reset")
+parser.add_argument("--floor_friction", type=float, default=None, metavar="MU",
+                    help="Pin the foot-floor friction: robot shapes and ground material both at MU, so the contact sees MU "
+                         "under any combine mode")
 parser.add_argument("--com_pin", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
                     help="Fix the base CoM offset from nominal (m) on every env; default without this flag: nominal (0 0 0)")
 parser.add_argument("--com_keep_training", action="store_true",
@@ -76,6 +79,7 @@ from deploy_effects import (
     apply_push_interval,
     apply_base_load_pin,
     apply_training_env_cfg,
+    pin_floor_friction,
     effective_action_config,
     install_joint_obs_delay,
     install_slew_limiter,
@@ -371,6 +375,8 @@ def main():
     if args_cli.joint_friction is not None:
         levels = dict(zip(("rs02", "rs03"), args_cli.joint_friction))
         friction_pinned = pin_joint_friction(env_cfg, levels, randomize_joint_coulomb_friction)
+    floor_friction = pin_floor_friction(env_cfg, args_cli.floor_friction)
+    print(f"[eval] floor friction: {floor_friction}")
     base_com = apply_base_com_pin(env_cfg, args_cli.com_pin, com_template, args_cli.com_keep_training)
     print(f"[eval] base CoM: {base_com}")
     base_load = apply_base_load_pin(env_cfg, args_cli.load_pin, load_template, args_cli.load_keep_training)
@@ -441,6 +447,7 @@ def main():
             "hip_yaw_kp": hip_yaw_kp,
             "gravity_bias": gravity_bias,
             "joint_friction_pin_nm": friction_pinned,
+            "floor_friction": floor_friction,
             "base_com": base_com,
             "base_load": base_load,
         },
