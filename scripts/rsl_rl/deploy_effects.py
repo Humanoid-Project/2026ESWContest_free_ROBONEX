@@ -325,6 +325,21 @@ def install_joint_obs_delay(unwrapped, steps=1, group="policy", names=("joint_po
     return wrapped
 
 
+def widen_joint_obs_delay(env_cfg, steps, group="policy", names=("joint_pos_rel", "joint_vel_rel")):
+    if steps is None or steps < 0:
+        return []
+    terms = getattr(env_cfg.observations, group)
+    widened = []
+    for name in names:
+        term = getattr(terms, name, None)
+        params = getattr(term, "params", None) or {}
+        if "max_delay_steps" not in params or params["max_delay_steps"] >= steps:
+            continue
+        widened.append({"term": name, "trained_max": int(params["max_delay_steps"]), "max": int(steps)})
+        params["max_delay_steps"] = int(steps)
+    return widened
+
+
 def pin_joint_obs_delay(unwrapped, steps, group="policy"):
     manager = unwrapped.observation_manager
     pinned = []

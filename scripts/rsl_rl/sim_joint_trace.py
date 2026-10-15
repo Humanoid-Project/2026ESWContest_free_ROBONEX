@@ -71,6 +71,7 @@ from deploy_effects import (
     install_slew_limiter,
     observation_delay_state,
     pin_joint_obs_delay,
+    widen_joint_obs_delay,
     summarize_delay_states,
 )
 from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
@@ -128,6 +129,9 @@ def main():
     # long enough that the measurement window never crosses a timeout reset
     env_cfg.episode_length_s = 1.0e6
 
+    obs_widened = widen_joint_obs_delay(env_cfg, args_cli.obs_delay_pin)
+    if obs_widened:
+        print(f"[trace] joint observation delay buffer widened for the pin: {obs_widened}")
     env = gym.make(args_cli.task, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
     runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
@@ -334,6 +338,7 @@ def main():
         "obs_delay_terms": obs_delayed,
         "obs_delay_pin": int(args_cli.obs_delay_pin),
         "obs_delay_pinned_terms": obs_pinned,
+        "obs_delay_widened": obs_widened,
         "delays": summarize_delay_states(delay_states),
         "base_com": base_com,
         "base_load": base_load,
