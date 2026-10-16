@@ -445,6 +445,7 @@ class StepOrderTest(unittest.TestCase):
         env = types.SimpleNamespace(scene={"robot": asset}, joint_ids=joint_ids, num_envs=num_envs, step_dt=0.02)
         cfg = types.SimpleNamespace(
             max_speed=6.0, max_accel=120.0, slew_enabled=True, foot_roll_limit=math.radians(12.0),
+            actuation_delay_substeps=None,
             foot_roll_coeffs=(-0.001195, 0.498159, 0.491024, -0.105182, -0.031960, 0.006356),
             foot_roll_pairs=(("l_ankle_upper_joint", "l_ankle_lower_joint", 1.0),
                              ("r_ankle_upper_joint", "r_ankle_lower_joint", -1.0)),
@@ -484,6 +485,7 @@ class StepOrderTest(unittest.TestCase):
         env = types.SimpleNamespace(scene={"robot": asset}, joint_ids=joint_ids, num_envs=num_envs, step_dt=0.02)
         cfg = types.SimpleNamespace(
             max_speed=6.0, max_accel=120.0, slew_enabled=True, foot_roll_limit=math.radians(12.0),
+            actuation_delay_substeps=None,
             foot_roll_coeffs=(-0.001195, 0.498159, 0.491024, -0.105182, -0.031960, 0.006356),
             foot_roll_pairs=(("l_ankle_upper_joint", "l_ankle_lower_joint", 1.0),
                              ("r_ankle_upper_joint", "r_ankle_lower_joint", -1.0)),

@@ -105,6 +105,23 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         self.foot_roll_clipped = torch.zeros(self.num_envs, len(self._roll_pairs), dtype=torch.bool, device=self.device)
         self.foot_roll_excess = torch.zeros(self.num_envs, device=self.device)
         self.foot_roll_slew_clipped = torch.zeros_like(self.foot_roll_clipped)
+        self._delay_range = cfg.actuation_delay_substeps
+        if self._delay_range is not None:
+            low, high = (int(v) for v in self._delay_range)
+            if low < 0 or high < low:
+                raise ValueError("actuation_delay_substeps must be (low, high) with 0 <= low <= high")
+            self._delay_range = (low, high)
+        self._delay_substeps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self._delay_last = self._asset.data.default_joint_pos[:, self._joint_ids].clone()
+        self._delay_hold = self._delay_last.clone()
+        self._delay_count = 0
+        if self._delay_range is not None:
+            self._draw_delay(slice(None))
+
+    def _draw_delay(self, ids):
+        low, high = self._delay_range
+        count = self._delay_substeps[ids].numel()
+        self._delay_substeps[ids] = torch.randint(low, high + 1, (count,), device=self.device)
 
     def _clip_roll(self, targets: torch.Tensor, flags: torch.Tensor) -> torch.Tensor:
         targets = targets.clone()
@@ -123,6 +140,30 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         return targets
 
     def process_actions(self, actions: torch.Tensor):
+        if self._delay_range is not None:
+            self._delay_hold = self._delay_last.clone()
+            self._delay_count = 0
+        self._process_targets(actions)
+        if self._delay_range is not None:
+            self._delay_last = self._processed_actions.clone()
+
+    def apply_actions(self):
+        if self._delay_range is None:
+            super().apply_actions()
+            return
+        held = (self._delay_count < self._delay_substeps).unsqueeze(1)
+        target = torch.where(held, self._delay_hold, self._processed_actions)
+        self._asset.set_joint_position_target(target, joint_ids=self._joint_ids)
+        self._delay_count += 1
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        super().reset(env_ids)
+        if self._delay_range is not None:
+            ids = slice(None) if env_ids is None else env_ids
+            self._delay_last[ids] = self._asset.data.default_joint_pos[ids][:, self._joint_ids]
+            self._draw_delay(ids)
+
+    def _process_targets(self, actions: torch.Tensor):
         JointPositionAction.process_actions(self, actions)
         roll_clip = self.cfg.foot_roll_limit > 0.0
         if roll_clip:
@@ -162,3 +203,4 @@ class Ver2JointPositionActionCfg(SlewLimitedJointPositionActionCfg):
     foot_roll_limit: float = 0.0
     foot_roll_coeffs: tuple = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     foot_roll_pairs: tuple = ()
+    actuation_delay_substeps: tuple | None = None
