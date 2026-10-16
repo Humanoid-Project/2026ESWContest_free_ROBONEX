@@ -666,6 +666,7 @@ def feet_stance_width_l2(
     command_deadband: float = 0.05,
     standing_window: tuple[float, float] | None = None,
     standing_scale: float | None = None,
+    lateral_gate: float | None = None,
 ) -> torch.Tensor:
     """Penalize feet width deviation from the target for the current command.
 
@@ -688,6 +689,9 @@ def feet_stance_width_l2(
         standing_penalty = _saturate(
             _bounded_square(outside, 2.0), scale if standing_scale is None else standing_scale
         )
+        if lateral_gate is not None:
+            lateral = torch.abs(command[:, 1]) > lateral_gate
+            walking_penalty = torch.where(lateral, torch.zeros_like(walking_penalty), walking_penalty)
         return torch.where(standing, standing_penalty, walking_penalty)
     if standing_width is not None:
         command = env.command_manager.get_command(command_name)

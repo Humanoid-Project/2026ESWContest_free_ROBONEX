@@ -51,6 +51,25 @@ class StandingTermsTest(unittest.TestCase):
         new_walk = self.width(widths, [walk] * 5, standing_window=(0.25, 0.30), standing_scale=0.0009)
         self.assertTrue(torch.allclose(old_walk, new_walk))
 
+    def test_lateral_gate_frees_walking_width_only_under_lateral_command(self):
+        win = dict(standing_window=(0.25, 0.30), standing_scale=0.0009)
+        widths = [0.22, 0.22, 0.22, 0.22]
+        cmds = [[0.0, 0.2, 0.0], [0.0, -0.1, 0.0], [0.3, 0.04, 0.0], [0.0, 0.0, 0.0]]
+        gated = self.width(widths, cmds, lateral_gate=0.05, **win)
+        plain = self.width(widths, cmds, **win)
+        self.assertEqual(gated[0].item(), 0.0)
+        self.assertEqual(gated[1].item(), 0.0)
+        self.assertGreater(plain[0].item(), 0.0)
+        self.assertAlmostEqual(gated[2].item(), plain[2].item(), places=6)
+        self.assertAlmostEqual(gated[3].item(), plain[3].item(), places=6)
+        self.assertGreater(gated[3].item(), 0.0)
+
+    def test_lateral_gate_none_is_inert(self):
+        win = dict(standing_window=(0.25, 0.30), standing_scale=0.0009)
+        widths = [0.22, 0.31]
+        cmds = [[0.0, 0.2, 0.0], [0.3, 0.0, 0.0]]
+        self.assertTrue(torch.equal(self.width(widths, cmds, lateral_gate=None, **win), self.width(widths, cmds, **win)))
+
     def test_without_window_the_old_standing_target_applies(self):
         out = self.width([0.303, 0.269], [[0.0, 0.0, 0.0], [0.3, 0.0, 0.0]])
         self.assertTrue(torch.allclose(out, torch.zeros(2)))
