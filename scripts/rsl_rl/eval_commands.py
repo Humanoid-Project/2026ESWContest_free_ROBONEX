@@ -36,6 +36,8 @@ parser.add_argument("--obs_delay", type=int, default=0,
                     help="Delay joint_pos_rel and joint_vel_rel in the policy observation by N steps")
 parser.add_argument("--obs_delay_pin", type=int, default=-1,
                     help="For a policy trained with a random joint observation delay: fix that delay at N steps for every env")
+parser.add_argument("--actuation_delay", type=int, nargs=2, default=None, metavar=("LOW", "HIGH"),
+                    help="Pin the action term's actuation delay to U{LOW..HIGH} physics substeps for every env (0 0 = off)")
 parser.add_argument("--joint_friction", type=float, nargs=2, default=None, metavar=("RS02", "RS03"),
                     help="Fix the Coulomb joint friction (N*m, static = dynamic, no viscous) on every env and reset")
 parser.add_argument("--floor_friction", type=float, default=None, metavar="MU",
@@ -76,6 +78,7 @@ from deploy_effects import (
     BASE_LOAD_EVENT,
     apply_base_com_pin,
     apply_hip_yaw_kp_nominal,
+    apply_actuation_delay,
     apply_push_interval,
     apply_base_load_pin,
     apply_training_env_cfg,
@@ -269,6 +272,12 @@ def check_training_config(checkpoint, applied):
                 issues.append(
                     "%s[%s] trained %.9f, evaluating %.9f" % (field, name, trained, value)
                 )
+    delay = applied.get("deploy_effects", {}).get("actuation_delay") or {}
+    if delay.get("source") != "pin":
+        trained_delay = action.get("actuation_delay_substeps")
+        trained_delay = None if trained_delay is None else [int(v) for v in trained_delay]
+        if trained_delay != delay.get("substeps"):
+            issues.append("actuation_delay_substeps trained %r, evaluating %r" % (trained_delay, delay.get("substeps")))
     policy = ref.get("observations", {}).get("policy", {})
     history = policy.get("history_length")
     if history is not None:
@@ -362,6 +371,8 @@ def main():
                 setattr(env_cfg.events, name, None)
                 pushes_disabled.append(name)
     push_interval = apply_push_interval(env_cfg, args_cli.push_interval)
+    actuation_delay = apply_actuation_delay(env_cfg, args_cli.actuation_delay)
+    print(f"[eval] actuation delay: {actuation_delay}")
     hip_yaw_kp = apply_hip_yaw_kp_nominal(env_cfg, args_cli.hip_yaw_kp_nominal)
     gravity_bias = None
     gravity_term = getattr(env_cfg.observations.policy, "projected_gravity", None)
@@ -449,6 +460,7 @@ def main():
             "obs_delay_widened": obs_widened,
             "pushes_disabled": pushes_disabled,
             "push_interval": push_interval,
+            "actuation_delay": actuation_delay,
             "hip_yaw_kp": hip_yaw_kp,
             "gravity_bias": gravity_bias,
             "joint_friction_pin_nm": friction_pinned,

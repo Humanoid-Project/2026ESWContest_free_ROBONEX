@@ -22,7 +22,8 @@ def make_term(delay, num_envs=16, default=None):
     asset = FakeAsset(num_envs, 16)
     if default is not None:
         asset.data.default_joint_pos[:] = default
-    env = types.SimpleNamespace(scene={"robot": asset}, joint_ids=JOINT_IDS, num_envs=num_envs, step_dt=0.02)
+    env = types.SimpleNamespace(scene={"robot": asset}, joint_ids=JOINT_IDS, num_envs=num_envs, step_dt=0.02,
+                                cfg=types.SimpleNamespace(decimation=DECIMATION))
     cfg = types.SimpleNamespace(
         max_speed=6.0, max_accel=120.0, slew_enabled=True, foot_roll_limit=math.radians(12.0),
         foot_roll_coeffs=(-0.001195, 0.498159, 0.491024, -0.105182, -0.031960, 0.006356),
@@ -109,9 +110,50 @@ class ActuationDelayTest(unittest.TestCase):
             torch.testing.assert_close(sent, prev.unsqueeze(1).expand_as(sent), rtol=0, atol=0)
 
     def test_range_is_validated(self):
-        for bad in ((-1, 2), (4, 2)):
+        for bad in ((-1, 2), (4, 2), (0, 9), (0, 8.5), (0, 4, 8)):
             with self.assertRaises(ValueError):
                 make_term(bad)
+
+
+    def test_list_override_is_accepted(self):
+        term, _ = make_term([0, 8])
+        self.assertEqual(term._delay_range, (0, 8))
+
+
+class ActuationDelayPinTest(unittest.TestCase):
+    def setUp(self):
+        import ast
+        path = Path(__file__).resolve().parents[1] / "scripts/rsl_rl/deploy_effects.py"
+        node = next(n for n in ast.parse(path.read_text()).body if getattr(n, "name", None) == "apply_actuation_delay")
+        ns = {}
+        exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), ns)
+        self.apply = ns["apply_actuation_delay"]
+
+    def cfg(self, delay):
+        term = types.SimpleNamespace(actuation_delay_substeps=delay)
+        return types.SimpleNamespace(actions=types.SimpleNamespace(joint_pos=term), decimation=8,
+                                     sim=types.SimpleNamespace(dt=0.0025))
+
+    def test_training_value_is_recorded_without_a_pin(self):
+        self.assertEqual(self.apply(self.cfg([0, 8])), {"source": "training", "substeps": [0, 8], "physics_dt": 0.0025})
+        self.assertEqual(self.apply(self.cfg(None))["substeps"], None)
+
+    def test_pin_sets_a_fixed_delay_and_zero_turns_it_off(self):
+        cfg = self.cfg([0, 8])
+        self.assertEqual(self.apply(cfg, (4, 4))["substeps"], [4, 4])
+        self.assertEqual(cfg.actions.joint_pos.actuation_delay_substeps, (4, 4))
+        out = self.apply(cfg, (0, 0))
+        self.assertEqual((out["source"], out["substeps"]), ("pin", None))
+        self.assertIsNone(cfg.actions.joint_pos.actuation_delay_substeps)
+
+    def test_pin_is_validated(self):
+        for bad in ((0, 9), (3, 2), (-1, 0)):
+            with self.assertRaises(ValueError):
+                self.apply(self.cfg(None), bad)
+        cfg = types.SimpleNamespace(actions=types.SimpleNamespace(joint_pos=types.SimpleNamespace()), decimation=8,
+                                    sim=types.SimpleNamespace(dt=0.0025))
+        with self.assertRaises(KeyError):
+            self.apply(cfg, (1, 1))
 
 
 if __name__ == "__main__":

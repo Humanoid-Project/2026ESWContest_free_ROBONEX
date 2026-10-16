@@ -439,6 +439,22 @@ def apply_push_interval(env_cfg, interval=None):
     return {"source": source, "event_present": term is not None, "interval_s": current}
 
 
+def apply_actuation_delay(env_cfg, pin=None):
+    term = getattr(env_cfg.actions, "joint_pos", None)
+    if pin is not None:
+        if term is None or not hasattr(term, "actuation_delay_substeps"):
+            raise KeyError("the joint_pos action term has no actuation_delay_substeps to pin")
+        lo, hi = (int(v) for v in pin)
+        decimation = int(env_cfg.decimation)
+        if not 0 <= lo <= hi <= decimation:
+            raise ValueError(f"the actuation delay pin needs 0 <= low <= high <= decimation ({decimation}): {pin}")
+        term.actuation_delay_substeps = None if hi == 0 else (lo, hi)
+    live = getattr(term, "actuation_delay_substeps", None)
+    return {"source": "training" if pin is None else "pin",
+            "substeps": None if live is None else [int(v) for v in live],
+            "physics_dt": float(env_cfg.sim.dt)}
+
+
 HIP_YAW_STIFFNESS_EVENT = "randomize_hip_yaw_stiffness"
 
 

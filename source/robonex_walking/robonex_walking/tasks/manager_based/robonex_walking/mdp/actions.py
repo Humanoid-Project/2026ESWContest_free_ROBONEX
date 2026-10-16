@@ -107,9 +107,12 @@ class Ver2JointPositionAction(SlewLimitedJointPositionAction):
         self.foot_roll_slew_clipped = torch.zeros_like(self.foot_roll_clipped)
         self._delay_range = cfg.actuation_delay_substeps
         if self._delay_range is not None:
-            low, high = (int(v) for v in self._delay_range)
-            if low < 0 or high < low:
-                raise ValueError("actuation_delay_substeps must be (low, high) with 0 <= low <= high")
+            values = tuple(self._delay_range)
+            if len(values) != 2 or any(float(v) != int(v) for v in values):
+                raise ValueError("actuation_delay_substeps must be two integers (low, high)")
+            low, high = int(values[0]), int(values[1])
+            if low < 0 or high < low or high > env.cfg.decimation:
+                raise ValueError(f"actuation_delay_substeps must satisfy 0 <= low <= high <= decimation ({env.cfg.decimation})")
             self._delay_range = (low, high)
         self._delay_substeps = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._delay_last = self._asset.data.default_joint_pos[:, self._joint_ids].clone()
