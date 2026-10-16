@@ -183,6 +183,28 @@ class WalkMetricsTests(unittest.TestCase):
         log = self.metrics.take_log()
         self.assertTrue(all(v == v for v in log.values()))
 
+    def test_stance_yaw_rate_counts_feet_in_contact_only(self):
+        self.env._robot.data.body_ang_vel_w = torch.zeros(1, 2, 3)
+        self.env._robot.data.body_ang_vel_w[0, 0, 2] = 0.2
+        self.env._robot.data.body_ang_vel_w[0, 1, 2] = 5.0
+        drive(self.metrics, self.env, [[1, 0], [1, 0]])
+        log = self.metrics.take_log()
+        self.assertAlmostEqual(log["Gait/stance_yaw_rate_rms_deg_s"], 0.2 * 180.0 / 3.141592653589793, places=3)
+
+    def test_stance_yaw_rate_is_rms_over_contact_samples(self):
+        self.env._robot.data.body_ang_vel_w = torch.zeros(1, 2, 3)
+        self.env._robot.data.body_ang_vel_w[0, 0, 2] = 0.3
+        self.env._robot.data.body_ang_vel_w[0, 1, 2] = -0.4
+        drive(self.metrics, self.env, [[1, 1]])
+        log = self.metrics.take_log()
+        expected = ((0.3 ** 2 + 0.4 ** 2) / 2) ** 0.5 * 180.0 / 3.141592653589793
+        self.assertAlmostEqual(log["Gait/stance_yaw_rate_rms_deg_s"], expected, places=3)
+
+    def test_stance_yaw_rate_zero_without_angular_velocity_data(self):
+        drive(self.metrics, self.env, [[1, 1]])
+        log = self.metrics.take_log()
+        self.assertEqual(log["Gait/stance_yaw_rate_rms_deg_s"], 0.0)
+
     def test_accumulators_reset_after_take_log(self):
         drive(self.metrics, self.env, [[1, 1], [1, 1]])
         self.metrics.take_log()

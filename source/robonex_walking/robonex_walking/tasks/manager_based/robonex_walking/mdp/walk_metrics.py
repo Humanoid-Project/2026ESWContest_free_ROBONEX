@@ -81,6 +81,8 @@ class WalkMetrics:
         self.swing_peak_sole_sum = torch.zeros((), device=dev)
         self.slip_sq_sum = torch.zeros((), device=dev)
         self.slip_n = torch.zeros((), device=dev)
+        self.yaw_sq_sum = torch.zeros((), device=dev)
+        self.yaw_n = torch.zeros((), device=dev)
         self.action_sum = torch.zeros(len(self.joint_names), device=dev)
         self.action_abs_max = torch.zeros(len(self.joint_names), device=dev)
         self.action_n = torch.zeros((), device=dev)
@@ -146,6 +148,13 @@ class WalkMetrics:
         if slip.numel() > 0:
             self.slip_sq_sum += slip.sum()
             self.slip_n += slip.numel()
+        body_ang = getattr(self.robot.data, "body_ang_vel_w", None)
+        if body_ang is not None:
+            yaw_rate = torch.nan_to_num(body_ang[:, self.body_ids, 2], nan=0.0, posinf=0.0, neginf=0.0)
+            yaw_sq = torch.square(yaw_rate)[contact]
+            if yaw_sq.numel() > 0:
+                self.yaw_sq_sum += yaw_sq.sum()
+                self.yaw_n += yaw_sq.numel()
 
         n_contact = contact.sum(dim=1)
         self.phase_steps[0] += (n_contact == 1).sum()
@@ -247,6 +256,9 @@ class WalkMetrics:
             "Gait/contact_slip_m_s": torch.sqrt(
                 self.slip_sq_sum / torch.clamp(self.slip_n, min=1.0)
             ).item(),
+            "Gait/stance_yaw_rate_rms_deg_s": torch.rad2deg(torch.sqrt(
+                self.yaw_sq_sum / torch.clamp(self.yaw_n, min=1.0)
+            )).item(),
         }
         action_n = torch.clamp(self.action_n, min=1.0)
         for index, name in enumerate(self.joint_names):
