@@ -644,6 +644,7 @@ class RewardsCfg:
             "tau_s": 0.8,
             "standing": "floor",
             "standing_cap": 0.060,
+            "standing_floor": None,
             "settle_s": 2.5,
             "command_name": "base_velocity",
             "command_deadband": 0.05,

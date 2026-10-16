@@ -210,6 +210,78 @@ class ComForwardMarginTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             term(env, push_grace_s=-1.0)
 
+    def test_standing_floor_default_none_matches_cap_mode(self):
+        cls = load()
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5)
+        for x in (0.030, 0.050, 0.070):
+            env = Env(1, x)
+            a = self.advance(cls(cfg(), env), env, 130, **kw).item()
+            env = Env(1, x)
+            b = self.advance(cls(cfg(), env), env, 130, standing_floor=None, **kw).item()
+            self.assertEqual(a, b)
+        env = Env(1, 0.030)
+        self.assertEqual(self.advance(cls(cfg(), env), env, 130, **kw).item(), 0.0)
+
+    def test_standing_floor_prices_settled_standing_below_the_floor(self):
+        cls = load()
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5, standing_floor=0.045)
+        env = Env(1, 0.030)
+        self.assertAlmostEqual(self.advance(cls(cfg(), env), env, 130, **kw).item(),
+                               1 - math.exp(-(0.015 ** 2) / 0.02 ** 2), places=4)
+        env = Env(1, 0.050)
+        self.assertEqual(self.advance(cls(cfg(), env), env, 130, **kw).item(), 0.0)
+        env = Env(1, 0.070)
+        self.assertAlmostEqual(self.advance(cls(cfg(), env), env, 130, **kw).item(),
+                               1 - math.exp(-(0.010 ** 2) / 0.02 ** 2), places=4)
+
+    def test_standing_floor_leaves_the_settle_window_on_the_walking_floor(self):
+        cls = load()
+        env = Env(1, 0.030)
+        env.command = torch.tensor([[0.3, 0.0, 0.0]])
+        term = cls(cfg(), env)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5, standing_floor=0.045)
+        walking = 1 - math.exp(-(0.025 ** 2) / 0.02 ** 2)
+        self.assertAlmostEqual(self.advance(term, env, 5, **kw).item(), walking, places=5)
+        env.command = torch.zeros(1, 3)
+        self.assertAlmostEqual(self.advance(term, env, 124, **kw).item(), walking, places=5)
+        self.assertAlmostEqual(self.advance(term, env, 1, **kw).item(), 1 - math.exp(-(0.015 ** 2) / 0.02 ** 2), places=5)
+
+    def test_standing_floor_with_off_mode_and_ignored_in_floor_mode(self):
+        cls = load()
+        env = Env(1, 0.030)
+        out = self.advance(cls(cfg(), env), env, 130, target=0.055, standing="off", settle_s=2.5, standing_floor=0.045).item()
+        self.assertAlmostEqual(out, 1 - math.exp(-(0.015 ** 2) / 0.02 ** 2), places=4)
+        env = Env(1, 0.080)
+        self.assertEqual(self.advance(cls(cfg(), env), env, 130, target=0.055, standing="off", settle_s=2.5,
+                                      standing_floor=0.045).item(), 0.0)
+        env = Env(1, 0.045)
+        a = self.advance(cls(cfg(), env), env, 130).item()
+        env = Env(1, 0.045)
+        self.assertEqual(self.advance(cls(cfg(), env), env, 130, standing_floor=0.030).item(), a)
+
+    def test_standing_floor_is_validated(self):
+        cls = load()
+        env = Env(1, 0.050)
+        term = cls(cfg(), env)
+        for bad in (float("nan"), float("inf"), -0.01):
+            with self.assertRaises(ValueError):
+                term(env, standing="cap", standing_floor=bad)
+        with self.assertRaises(ValueError):
+            term(env, standing="cap", standing_cap=0.060, standing_floor=0.060)
+        term(env, standing="off", standing_cap=0.060, standing_floor=0.070)
+
+    def test_standing_floor_is_gated_like_the_other_branches(self):
+        cls = load(gate=torch.zeros(1))
+        env = Env(1, 0.030)
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5, standing_floor=0.045)
+        self.assertEqual(self.advance(cls(cfg(), env), env, 130, recovery_gate=(0.2, 0.08, 0.2, 1.5), **kw).item(), 0.0)
+        cls = load()
+        env = Env(1, 0.030)
+        term = cls(cfg(), env)
+        self.assertGreater(self.advance(term, env, 130, push_grace_s=1.7, **kw).item(), 0.4)
+        env._sway_last_push_step = torch.tensor([env.common_step_counter])
+        self.assertEqual(self.advance(term, env, 1, push_grace_s=1.7, **kw).item(), 0.0)
+
     def test_cfg_term_is_inert_by_default(self):
         tree = ast.parse(ENV_CFG.read_text())
         rewards = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "RewardsCfg")
@@ -221,7 +293,7 @@ class ComForwardMarginTest(unittest.TestCase):
         self.assertNotIn("recovery_gate", params)
         literal = {k: ast.literal_eval(v) for k, v in params.items() if k not in ("asset_cfg", "foot_cfg")}
         self.assertEqual(literal, {"target": 0.065, "scale": 0.02, "tau_s": 0.8, "standing": "floor", "standing_cap": 0.060,
-                                   "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05,
+                                   "standing_floor": None, "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05,
                                    "push_grace_s": 0.0})
 
 

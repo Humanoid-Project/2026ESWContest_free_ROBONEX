@@ -977,6 +977,7 @@ class com_forward_margin_l2(ManagerTermBase):
         recovery_gate: tuple[float, float, float, float] | None = None,
         standing: str = "floor",
         standing_cap: float = 0.060,
+        standing_floor: float | None = None,
         settle_s: float = 2.5,
         command_name: str = "base_velocity",
         command_deadband: float = 0.05,
@@ -988,6 +989,10 @@ class com_forward_margin_l2(ManagerTermBase):
             raise ValueError("push_grace_s must be finite and nonnegative")
         if standing not in ("floor", "cap", "off"):
             raise ValueError(f"com_forward_margin standing must be floor, cap or off, not {standing!r}")
+        if standing_floor is not None and (not math.isfinite(standing_floor) or standing_floor < 0):
+            raise ValueError("standing_floor must be finite and nonnegative")
+        if standing_floor is not None and standing == "cap" and standing_floor >= standing_cap:
+            raise ValueError("standing_floor must be below standing_cap")
         dx = self.margin(env, asset_cfg, foot_cfg)
         if self._ema is None or self._ema.shape != dx.shape:
             self._ema = dx.clone()
@@ -1007,6 +1012,9 @@ class com_forward_margin_l2(ManagerTermBase):
             settled = self._still >= settle_s - 0.5 * env.step_dt
             excess = torch.clamp(self._ema - standing_cap, min=0.0)
             above = _saturate(torch.square(excess), scale * scale) if standing == "cap" else torch.zeros_like(penalty)
+            if standing_floor is not None:
+                below = torch.clamp(standing_floor - self._ema, min=0.0)
+                above = above + _saturate(torch.square(below), scale * scale)
             penalty = torch.where(settled, above, penalty)
         if recovery_gate is not None:
             penalty = penalty * _recovery_quiet(env, *recovery_gate)
