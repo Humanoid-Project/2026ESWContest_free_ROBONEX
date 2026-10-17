@@ -215,3 +215,27 @@ class WalkMetricsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TouchdownDescentMetricTests(unittest.TestCase):
+    def test_descent_is_extrapolated_to_the_contact_instant(self):
+        env = make_env()
+        env._robot.data.body_lin_vel_w = torch.zeros(1, 2, 3)
+        env.scene.sensors["contact_forces"].data.current_contact_time = torch.zeros(1, 2)
+        metrics = WalkMetrics(env, REST, DT)
+        steps = [([0, 0], -0.4, 0.0), ([0, 0], -0.4, 0.0), ([0, 0], -0.6, 0.0), ([1, 0], -0.1, 0.005)]
+        for contact, vz, ct in steps:
+            env._robot.data.body_lin_vel_w[:, 0, 2] = vz
+            env.scene.sensors["contact_forces"].data.current_contact_time[:, 0] = ct
+            drive(metrics, env, [contact])
+        log = metrics.take_log()
+        lag = DT - 0.005
+        self.assertAlmostEqual(log["Gait/touchdown_descent_50hz_m_s"], 0.6, places=5)
+        self.assertAlmostEqual(log["Gait/touchdown_descent_m_s"], 0.6 + 0.2 * lag / DT, places=5)
+        self.assertAlmostEqual(log["Gait/touchdown_lag_ms"], 1000.0 * lag, places=3)
+
+    def test_without_contact_time_the_metric_stays_zero(self):
+        env = make_env()
+        metrics = WalkMetrics(env, REST, DT)
+        drive(metrics, env, [[0, 0], [1, 0]])
+        self.assertEqual(metrics.take_log()["Gait/touchdown_descent_m_s"], 0.0)

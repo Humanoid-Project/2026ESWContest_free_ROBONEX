@@ -586,6 +586,17 @@ class RewardsCfg:
         },
     )
 
+    feet_touchdown_descent = RewTerm(
+        func=mdp.feet_touchdown_descent_l2,
+        weight=0.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["l_foot", "r_foot"], preserve_order=True),
+            "asset_cfg": SceneEntityCfg("robot", body_names=["l_foot", "r_foot"], preserve_order=True),
+            "deadband": 0.25,
+            "scale": 0.16,
+        },
+    )
+
     # Regularization
     action_rate = RewTerm(func=mdp.action_rate_l2_bounded, weight=-0.2)
     action_smoothness = RewTerm(

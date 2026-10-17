@@ -332,6 +332,54 @@ class track_lin_vel_y_cycle_exp(ManagerTermBase):
         return torch.exp(-torch.square(mean) / std**2)
 
 
+class feet_touchdown_descent_l2(ManagerTermBase):
+    def __init__(self, cfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._d1 = None
+        self._d2 = None
+        self._fresh = None
+        self._step = None
+        self._value = None
+
+    def reset(self, env_ids=None):
+        if self._fresh is None:
+            return
+        if env_ids is None:
+            self._fresh[:] = True
+        else:
+            self._fresh[env_ids] = True
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        sensor_cfg: SceneEntityCfg,
+        asset_cfg: SceneEntityCfg,
+        deadband: float = 0.25,
+        scale: float = 0.16,
+    ) -> torch.Tensor:
+        if self._step == env.common_step_counter and self._value is not None:
+            return self._value
+        self._step = env.common_step_counter
+        asset: Articulation = env.scene[asset_cfg.name]
+        sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+        down = -torch.nan_to_num(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, 2], nan=0.0, posinf=0.0, neginf=0.0)
+        if self._d1 is None:
+            self._d1 = down.clone()
+            self._d2 = down.clone()
+            self._fresh = torch.ones(down.shape[0], dtype=torch.bool, device=down.device)
+        dt = env.step_dt
+        first = sensor.compute_first_contact(dt)[:, sensor_cfg.body_ids] & ~self._fresh.unsqueeze(1)
+        lag = torch.clamp(dt - sensor.data.current_contact_time[:, sensor_cfg.body_ids], min=0.0, max=dt)
+        at_contact = torch.clamp(self._d1 + (self._d1 - self._d2) * lag / dt, min=0.0)
+        excess = torch.clamp(at_contact - deadband, min=0.0)
+        self._value = _saturate(torch.sum(torch.square(excess) * first, dim=1), scale)
+        fresh = self._fresh.unsqueeze(1)
+        self._d2 = torch.where(fresh, down, self._d1)
+        self._d1 = down
+        self._fresh[:] = False
+        return self._value
+
+
 class action_smoothness_l2(ManagerTermBase):
     def __init__(self, cfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)

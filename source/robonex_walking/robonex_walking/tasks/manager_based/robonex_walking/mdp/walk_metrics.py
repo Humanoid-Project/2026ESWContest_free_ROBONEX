@@ -57,6 +57,8 @@ class WalkMetrics:
         self.since_last_td = torch.zeros(n, device=dev)
         self.swing_peak = torch.zeros(n, 2, device=dev)
         self.swing_peak_sole = torch.zeros(n, 2, device=dev)
+        self.prev_down = torch.zeros(n, 2, device=dev)
+        self.prev2_down = torch.zeros(n, 2, device=dev)
 
     def _reset_accumulators(self) -> None:
         dev = self.device
@@ -83,6 +85,10 @@ class WalkMetrics:
         self.slip_n = torch.zeros((), device=dev)
         self.yaw_sq_sum = torch.zeros((), device=dev)
         self.yaw_n = torch.zeros((), device=dev)
+        self.td_down_sum = torch.zeros((), device=dev)
+        self.td_down_ext_sum = torch.zeros((), device=dev)
+        self.td_lag_sum = torch.zeros((), device=dev)
+        self.td_down_n = torch.zeros((), device=dev)
         self.action_sum = torch.zeros(len(self.joint_names), device=dev)
         self.action_abs_max = torch.zeros(len(self.joint_names), device=dev)
         self.action_n = torch.zeros((), device=dev)
@@ -172,6 +178,24 @@ class WalkMetrics:
 
         touchdown = contact & ~self.prev_contact
         self.td_count += touchdown.sum(dim=0)
+
+        contact_time = getattr(self.sensor.data, "current_contact_time", None)
+        if contact_time is not None:
+            down = -torch.nan_to_num(self.robot.data.body_lin_vel_w[:, self.body_ids, 2], nan=0.0, posinf=0.0, neginf=0.0)
+            if bool(fresh.any()):
+                self.prev_down[fresh] = down[fresh]
+                self.prev2_down[fresh] = down[fresh]
+            lag = torch.clamp(self.dt - contact_time[:, self.sensor_ids], min=0.0, max=self.dt)
+            ext = torch.clamp(self.prev_down + (self.prev_down - self.prev2_down) * lag / self.dt, min=0.0)
+            valid = touchdown & ~fresh.unsqueeze(1)
+            if moving is not None:
+                valid &= moving.unsqueeze(1)
+            self.td_down_sum += self.prev_down[valid].sum()
+            self.td_down_ext_sum += ext[valid].sum()
+            self.td_lag_sum += lag[valid].sum()
+            self.td_down_n += valid.sum()
+            self.prev2_down = self.prev_down
+            self.prev_down = down
         self.since_last_td += self.dt
 
         simultaneous = touchdown.all(dim=1)
@@ -252,6 +276,15 @@ class WalkMetrics:
             "Gait/swing_censored_frac": (
                 self.swing_dropped
                 / torch.clamp(self.swing_peak_n + self.swing_dropped, min=1.0)
+            ).item(),
+            "Gait/touchdown_descent_m_s": (
+                self.td_down_ext_sum / torch.clamp(self.td_down_n, min=1.0)
+            ).item(),
+            "Gait/touchdown_descent_50hz_m_s": (
+                self.td_down_sum / torch.clamp(self.td_down_n, min=1.0)
+            ).item(),
+            "Gait/touchdown_lag_ms": (
+                1000.0 * self.td_lag_sum / torch.clamp(self.td_down_n, min=1.0)
             ).item(),
             "Gait/contact_slip_m_s": torch.sqrt(
                 self.slip_sq_sum / torch.clamp(self.slip_n, min=1.0)
