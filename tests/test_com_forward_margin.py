@@ -222,6 +222,18 @@ class ComForwardMarginTest(unittest.TestCase):
         env = Env(1, 0.030)
         self.assertEqual(self.advance(cls(cfg(), env), env, 130, **kw).item(), 0.0)
 
+    def test_standing_floor_zero_matches_none(self):
+        cls = load()
+        kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5)
+        for x in (-0.020, 0.030, 0.070):
+            env = Env(1, x)
+            a = self.advance(cls(cfg(), env), env, 130, standing_floor=None, **kw).item()
+            env = Env(1, x)
+            b = self.advance(cls(cfg(), env), env, 130, standing_floor=0.0, **kw).item()
+            self.assertEqual(a, b, x)
+        env = Env(1, 0.050)
+        cls(cfg(), env)(env, standing="cap", standing_cap=0.0, standing_floor=0.0)
+
     def test_standing_floor_prices_settled_standing_below_the_floor(self):
         cls = load()
         kw = dict(target=0.055, standing="cap", standing_cap=0.060, settle_s=2.5, standing_floor=0.045)
@@ -293,7 +305,7 @@ class ComForwardMarginTest(unittest.TestCase):
         self.assertNotIn("recovery_gate", params)
         literal = {k: ast.literal_eval(v) for k, v in params.items() if k not in ("asset_cfg", "foot_cfg")}
         self.assertEqual(literal, {"target": 0.065, "scale": 0.02, "tau_s": 0.8, "standing": "floor", "standing_cap": 0.060,
-                                   "standing_floor": None, "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05,
+                                   "standing_floor": 0.0, "settle_s": 2.5, "command_name": "base_velocity", "command_deadband": 0.05,
                                    "push_grace_s": 0.0})
 
 
