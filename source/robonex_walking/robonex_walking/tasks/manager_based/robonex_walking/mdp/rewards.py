@@ -683,7 +683,7 @@ def feet_stance_width_l2(
         command = env.command_manager.get_command(command_name)
         standing = torch.linalg.norm(command, dim=1) < command_deadband
         deviation = foot_width - target
-        if lateral_deadband is not None:
+        if lateral_deadband:
             band = lateral_deadband * torch.abs(command[:, 1])
             deviation = torch.sign(deviation) * torch.clamp(torch.abs(deviation) - band, min=0.0)
         walking_penalty = _saturate(_bounded_square(deviation, 2.0), scale)
@@ -694,7 +694,7 @@ def feet_stance_width_l2(
             _bounded_square(outside, 2.0), scale if standing_scale is None else standing_scale
         )
         return torch.where(standing, standing_penalty, walking_penalty)
-    if lateral_deadband is not None:
+    if lateral_deadband:
         raise ValueError("lateral_deadband needs standing_window")
     if standing_width is not None:
         command = env.command_manager.get_command(command_name)

@@ -76,6 +76,13 @@ class StandingTermsTest(unittest.TestCase):
         cmds = [[0.0, 0.2, 0.0], [0.3, 0.0, 0.0]]
         self.assertTrue(torch.equal(self.width(widths, cmds, lateral_deadband=None, **win), self.width(widths, cmds, **win)))
 
+    def test_lateral_deadband_zero_is_inert(self):
+        win = dict(standing_window=(0.25, 0.30), standing_scale=0.0009)
+        widths = [0.22, 0.31, 0.35]
+        cmds = [[0.0, 0.2, 0.0], [0.3, 0.0, 0.0], [0.0, -0.2, 0.0]]
+        self.assertTrue(torch.equal(self.width(widths, cmds, lateral_deadband=0.0, **win), self.width(widths, cmds, **win)))
+        self.assertTrue(torch.equal(self.width([0.27], [[0.0, 0.2, 0.0]], lateral_deadband=0.0), self.width([0.27], [[0.0, 0.2, 0.0]])))
+
     def test_lateral_deadband_without_window_raises(self):
         with self.assertRaises(ValueError):
             self.width([0.27], [[0.0, 0.2, 0.0]], lateral_deadband=0.44)

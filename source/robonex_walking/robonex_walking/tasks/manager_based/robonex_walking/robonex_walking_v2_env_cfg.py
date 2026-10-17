@@ -525,7 +525,7 @@ class RewardsCfg:
             ),
             "standing_window": STANDING_WIDTH_WINDOW,
             "standing_scale": STANDING_WIDTH_SCALE,
-            "lateral_deadband": None,
+            "lateral_deadband": 0.0,
         },
     )
     feet_clearance = RewTerm(
