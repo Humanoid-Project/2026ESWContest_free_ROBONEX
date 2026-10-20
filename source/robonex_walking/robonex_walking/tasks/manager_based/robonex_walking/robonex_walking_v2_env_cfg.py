@@ -594,6 +594,9 @@ class RewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names=["l_foot", "r_foot"], preserve_order=True),
             "deadband": 0.25,
             "scale": 0.16,
+            "command_name": "base_velocity",
+            "command_deadband": 0.0,
+            "push_grace_s": 0.0,
         },
     )
 

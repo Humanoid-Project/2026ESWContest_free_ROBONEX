@@ -356,7 +356,14 @@ class feet_touchdown_descent_l2(ManagerTermBase):
         asset_cfg: SceneEntityCfg,
         deadband: float = 0.25,
         scale: float = 0.16,
+        command_name: str = "base_velocity",
+        command_deadband: float = 0.0,
+        push_grace_s: float = 0.0,
     ) -> torch.Tensor:
+        if not math.isfinite(command_deadband) or command_deadband < 0:
+            raise ValueError("command_deadband must be finite and nonnegative")
+        if not math.isfinite(push_grace_s) or push_grace_s < 0:
+            raise ValueError("push_grace_s must be finite and nonnegative")
         if self._step == env.common_step_counter and self._value is not None:
             return self._value
         self._step = env.common_step_counter
@@ -372,7 +379,16 @@ class feet_touchdown_descent_l2(ManagerTermBase):
         lag = torch.clamp(dt - sensor.data.current_contact_time[:, sensor_cfg.body_ids], min=0.0, max=dt)
         at_contact = torch.clamp(self._d1 + (self._d1 - self._d2) * lag / dt, min=0.0)
         excess = torch.clamp(at_contact - deadband, min=0.0)
-        self._value = _saturate(torch.sum(torch.square(excess) * first, dim=1), scale)
+        value = _saturate(torch.sum(torch.square(excess) * first, dim=1), scale)
+        if command_deadband > 0:
+            command = env.command_manager.get_command(command_name)
+            value = value * (torch.linalg.norm(command, dim=1) > command_deadband)
+        last = getattr(env, "_sway_last_push_step", None)
+        if push_grace_s > 0 and last is not None:
+            age = env.common_step_counter - last
+            grace = (last >= 0) & (age >= 0) & (age <= math.ceil(push_grace_s / dt)) & (age <= env.episode_length_buf)
+            value = torch.where(grace, torch.zeros_like(value), value)
+        self._value = value
         fresh = self._fresh.unsqueeze(1)
         self._d2 = torch.where(fresh, down, self._d1)
         self._d1 = down
