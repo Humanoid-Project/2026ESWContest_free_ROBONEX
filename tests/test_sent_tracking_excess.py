@@ -22,9 +22,9 @@ ENV_CFG = TASK / "robonex_walking_v2_env_cfg.py"
 EFFECTS = ROOT / "scripts/rsl_rl/deploy_effects.py"
 EVAL = ROOT / "scripts/rsl_rl/eval_commands.py"
 TRAIN = ROOT / "scripts/rsl_rl/train.py"
-ISAAC = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab")
+ISAAC = Path.home() / "IsaacLab/source/isaaclab/isaaclab"
 W102_RUN = Path(
-    "/home/polygon/humanoid_project/robonex-walking/logs/rsl_rl/robonex_walking_v2_edu/"
+    str(Path(__file__).resolve().parents[1]) + "/logs/rsl_rl/robonex_walking_v2_edu/"
     "2026-10-02_10-26-01_W102s44_v2_edu_jointdelay_s44"
 )
 TRACKING_MODULE = "robonex_walking.tasks.manager_based.robonex_walking.mdp.tracking"

@@ -10,7 +10,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[1] / "source/robonex_walking/robonex_walking/tasks/manager_based/robonex_walking"
 REWARDS = ROOT / "mdp/rewards.py"
 CFG = ROOT / "robonex_walking_v2_env_cfg.py"
-ISAAC_DICT = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab/utils/dict.py")
+ISAAC_DICT = Path.home() / "IsaacLab/source/isaaclab/isaaclab/utils/dict.py"
 DT = 0.02
 GRACE_STEPS = math.ceil(1.5 / DT)
 

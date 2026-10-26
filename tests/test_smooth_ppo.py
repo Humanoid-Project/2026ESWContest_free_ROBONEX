@@ -270,7 +270,7 @@ def test_history_frames_are_oldest_first():
     import numpy as np
     from robonex_common.runtime import ObservationHistory
 
-    buffer_path = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab/utils/buffers/circular_buffer.py")
+    buffer_path = Path.home() / "IsaacLab/source/isaaclab/isaaclab/utils/buffers/circular_buffer.py"
     if not buffer_path.exists():
         pytest.skip("Isaac Lab source not found")
     buffer = _load(buffer_path, "isaaclab_circular_buffer_for_smooth_ppo").CircularBuffer(HISTORY, 1, "cpu")
@@ -496,7 +496,7 @@ def test_cfg_fields_are_accepted_by_the_algorithm():
     params = inspect.signature(SMOOTH_PPO.SmoothPPO.__init__).parameters
     for name in fields[1:]:
         assert name in params, name
-    isaac_rl_cfg = Path("/home/polygon/IsaacLab/source/isaaclab_rl/isaaclab_rl/rsl_rl/rl_cfg.py")
+    isaac_rl_cfg = Path.home() / "IsaacLab/source/isaaclab_rl/isaaclab_rl/rsl_rl/rl_cfg.py"
     if not isaac_rl_cfg.exists():
         pytest.skip("Isaac Lab source not found")
     stock = inspect.signature(SMOOTH_PPO.PPO.__init__).parameters

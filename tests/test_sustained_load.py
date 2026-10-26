@@ -18,7 +18,7 @@ CFG = TASK / "robonex_walking_v2_env_cfg.py"
 EFFECTS = ROOT / "scripts/rsl_rl/deploy_effects.py"
 EVAL = ROOT / "scripts/rsl_rl/eval_commands.py"
 TRACE = ROOT / "scripts/rsl_rl/sim_joint_trace.py"
-ISAAC = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab")
+ISAAC = Path.home() / "IsaacLab/source/isaaclab/isaaclab"
 ISAAC_DICT = ISAAC / "utils/dict.py"
 FUNC = "robonex_walking.tasks.manager_based.robonex_walking.mdp.events:apply_sustained_base_load"
 

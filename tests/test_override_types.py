@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TASK = ROOT / "source/robonex_walking/robonex_walking/tasks/manager_based/robonex_walking"
 CFG = TASK / "robonex_walking_v2_env_cfg.py"
-ISAAC_DICT = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab/utils/dict.py")
+ISAAC_DICT = Path.home() / "IsaacLab/source/isaaclab/isaaclab/utils/dict.py"
 
 REWARD_OVERRIDES = (
     "env.rewards.slew_lag.weight=0.0",

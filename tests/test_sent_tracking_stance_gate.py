@@ -27,7 +27,7 @@ from test_sent_tracking_excess import (
 )
 
 W104_RUN = Path(
-    "/home/polygon/humanoid_project/robonex-walking/logs/rsl_rl/robonex_walking_v2_edu/"
+    str(Path(__file__).resolve().parents[1]) + "/logs/rsl_rl/robonex_walking_v2_edu/"
     "2026-10-03_11-56-34_W104s44a_v2_edu_trackexc200_s44"
 )
 FUNC = "robonex_walking.tasks.manager_based.robonex_walking.mdp.rewards:sent_tracking_excess_l2"

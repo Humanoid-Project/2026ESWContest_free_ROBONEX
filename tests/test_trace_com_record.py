@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TRACE = ROOT / "scripts/rsl_rl/sim_joint_trace.py"
 EVAL = ROOT / "scripts/rsl_rl/eval_commands.py"
 EFFECTS = ROOT / "scripts/rsl_rl/deploy_effects.py"
-ISAAC_DICT = Path("/home/polygon/IsaacLab/source/isaaclab/isaaclab/utils/dict.py")
+ISAAC_DICT = Path.home() / "IsaacLab/source/isaaclab/isaaclab/utils/dict.py"
 
 DR = {"x": (-0.02, 0.02), "y": (-0.02, 0.02), "z": (0.0, 0.0)}
 ZERO = {"x": (0.0, 0.0), "y": (0.0, 0.0), "z": (0.0, 0.0)}
