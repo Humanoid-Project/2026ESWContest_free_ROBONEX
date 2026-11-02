@@ -24,13 +24,22 @@ TASKS = {"ver2_edu": "RoboNex-Walking-V2-Edu-v0"}
 POSE_TASKS = {("ver2_edu", "lean25"): "RoboNex-Walking-V2-Edu-Lean25-v0"}
 DESCRIPTION_MODELS = {"ver2_edu": "ver2/mujoco/robot/edu/scene.xml"}
 SCENE_BY_TRAINED_MODEL = {"/ver2-3/": "ver2/mujoco/robot/edu/scene.xml", "/ver2/": "ver2/mujoco/robot/edu/scene.xml"}
+RETIRED_TRAINED_MODELS = ("/ver2-2/",)
+CURRENT_VER2_FROM_RUN_DATE = "2026-11-02"
 
 
 def trained_description_model(saved_env):
     text = saved_env.read_text()
-    for marker, scene in SCENE_BY_TRAINED_MODEL.items():
+    for marker in RETIRED_TRAINED_MODELS:
         if "robonex-description" + marker in text:
-            return scene
+            raise SystemExit(f"{saved_env}: trained on the removed robonex-description{marker} model; it cannot be exported")
+    if "robonex-description/ver2-3/" in text:
+        return SCENE_BY_TRAINED_MODEL["/ver2-3/"]
+    if "robonex-description/ver2/" in text:
+        run_date = saved_env.parent.parent.name[:10]
+        if run_date < CURRENT_VER2_FROM_RUN_DATE:
+            raise SystemExit(f"{saved_env}: run dated {run_date} was trained on the removed old ver2 model (ver2-1); it cannot be exported")
+        return SCENE_BY_TRAINED_MODEL["/ver2/"]
     return None
 
 
@@ -275,6 +284,8 @@ def main():
     args.robot_model = inferred
     print(f"robot model: {inferred}, action pose: {pose} (inferred from {saved_env})")
     trained = trained_description_model(saved_env)
+    if trained is None and args.description_model is None:
+        raise SystemExit(f"{saved_env} names no known robonex-description model; pass --description-model explicitly")
     warning = description_model_warning(args.description_model, trained)
     if warning is not None:
         print(warning, file=sys.stderr)
