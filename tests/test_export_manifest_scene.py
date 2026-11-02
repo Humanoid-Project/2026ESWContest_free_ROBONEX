@@ -1,11 +1,12 @@
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPORT = ROOT / "scripts/export_policy_manifest.py"
-DESCRIPTION = ROOT.parent / "robonex-description"
+DESCRIPTION = Path(os.environ.get("ROBONEX_DESCRIPTION_ROOT", ROOT.parent / "robonex-description"))
 
 
 def export_module():
@@ -29,11 +30,11 @@ class ExportSceneTests(unittest.TestCase):
         return path
 
     def test_the_trained_model_maps_to_its_free_base_scene(self):
-        ver23 = self.saved_env("usd_path: /home/x/robonex-description/ver2-3/isaac/edu/closed_loop_mesh/robonex_edu_closed_loop_mesh.usd\n")
-        ver22 = self.saved_env("usd_path: /home/x/robonex-description/ver2-2/usd/edu/robonex.usd\n")
-        ver2 = self.saved_env("usd_path: /home/x/robonex-description/ver2/usd/edu/robonex.usd\n")
-        self.assertEqual(self.export.trained_description_model(ver23), "ver2-3/mujoco/robot/edu/scene.xml")
-        self.assertEqual(self.export.trained_description_model(ver22), "ver2-2/mujoco/robot/edu/scene.xml")
+        before_rename = self.saved_env(
+            "usd_path: /home/x/robonex-description/ver2-3/isaac/edu/closed_loop_mesh/robonex_edu_closed_loop_mesh.usd\n")
+        ver2 = self.saved_env(
+            "usd_path: /home/x/robonex-description/ver2/isaac/edu/closed_loop_mesh/robonex_edu_closed_loop_mesh.usd\n")
+        self.assertEqual(self.export.trained_description_model(before_rename), "ver2/mujoco/robot/edu/scene.xml")
         self.assertEqual(self.export.trained_description_model(ver2), "ver2/mujoco/robot/edu/scene.xml")
         self.assertIsNone(self.export.trained_description_model(self.saved_env("usd_path: other\n")))
 
@@ -53,11 +54,11 @@ class ExportSceneTests(unittest.TestCase):
 
     def test_a_description_model_from_another_model_warns(self):
         warning = self.export.description_model_warning(
-            "ver2/mujoco/robot/edu/scene.xml", "ver2-2/mujoco/robot/edu/scene.xml")
-        self.assertIn("ver2-2/mujoco/robot/edu/scene.xml", warning)
+            "ver1/mujoco/robot/scene.xml", "ver2/mujoco/robot/edu/scene.xml")
+        self.assertIn("ver2/mujoco/robot/edu/scene.xml", warning)
         self.assertIsNone(self.export.description_model_warning(
-            "ver2-2/mujoco/robot/edu/scene.xml", "ver2-2/mujoco/robot/edu/scene.xml"))
-        self.assertIsNone(self.export.description_model_warning(None, "ver2-2/mujoco/robot/edu/scene.xml"))
+            "ver2/mujoco/robot/edu/scene.xml", "ver2/mujoco/robot/edu/scene.xml"))
+        self.assertIsNone(self.export.description_model_warning(None, "ver2/mujoco/robot/edu/scene.xml"))
         self.assertIsNone(self.export.description_model_warning("ver2/mujoco/robot/edu/scene.xml", None))
 
     def test_the_warning_goes_to_stderr(self):

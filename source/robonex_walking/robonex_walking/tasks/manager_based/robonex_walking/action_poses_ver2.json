@@ -1,7 +1,7 @@
 {
   "lean25": {
     "lean_deg": 2.5,
-    "generator": "robonex-walking/etc/delegates/2026-10-13_lean_pose/lean_solve.py (robonex-description model_tools Loops.solve, ver2-3 scene_fixed)",
+    "generator": "robonex-walking/etc/delegates/2026-10-13_lean_pose/lean_solve.py (robonex-description model_tools Loops.solve, ver2 scene_fixed, formerly ver2-3)",
     "solve_residual_m": 2.220446049250313e-16,
     "com_ahead_of_ankle_axes_mm": 60.35,
     "default_actuated_pos": {

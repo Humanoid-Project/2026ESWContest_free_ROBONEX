@@ -810,13 +810,3 @@ class RoboNexWalkingV2EduEnvCfg(RoboNexWalkingV2EnvCfg):
 class RoboNexWalkingV2EduLean25EnvCfg(RoboNexWalkingV2EnvCfg):
     variant: str = "edu"
     action_pose: str = "lean25"
-
-
-@configclass
-class RoboNexWalkingV2ProEnvCfg(RoboNexWalkingV2EnvCfg):
-    variant: str = "pro"
-
-
-@configclass
-class RoboNexWalkingV2MaxEnvCfg(RoboNexWalkingV2EnvCfg):
-    variant: str = "max"

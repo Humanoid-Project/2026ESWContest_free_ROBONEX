@@ -77,15 +77,3 @@ class PPORunnerCfg(RslRlOnPolicyRunnerCfg):
 class V2EduPPORunnerCfg(PPORunnerCfg):
 
     experiment_name = "robonex_walking_v2_edu"
-
-
-@configclass
-class V2ProPPORunnerCfg(PPORunnerCfg):
-
-    experiment_name = "robonex_walking_v2_pro"
-
-
-@configclass
-class V2MaxPPORunnerCfg(PPORunnerCfg):
-
-    experiment_name = "robonex_walking_v2_max"

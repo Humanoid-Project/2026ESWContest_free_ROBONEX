@@ -71,6 +71,7 @@ class LeanPoseContractTests(unittest.TestCase):
             self.c.pose_contract("lean99")
 
     def test_lean_pose_is_refused_for_other_variants(self):
+        self.assertEqual(self.c.VARIANTS, ("edu",))
         for variant in ("pro", "max"):
             with self.assertRaises(ValueError):
                 self.c.pose_contract("lean25", variant)

@@ -31,8 +31,8 @@ RoboNex는 무릎의 4절 링크와 두 모터가 결합된 차동 발목을 포
 | 핵심 기구 | 폐루프 무릎 4절 링크, 2모터 차동 발목 |
 | 학습 환경 | NVIDIA Isaac Sim / Isaac Lab |
 | 강화학습 | RSL-RL PPO |
-| Gym Task | `RoboNex-Walking-V2-Edu-v0` (Pro·Max: `-V2-Pro-v0`, `-V2-Max-v0`) |
-| 로봇 모델 | `robonex-description` ver2-3 Edu (폐루프 mesh USD) |
+| Gym Task | `RoboNex-Walking-V2-Edu-v0` |
+| 로봇 모델 | `robonex-description` ver2 (폐루프 mesh USD) |
 | 목표 동작 | 평지에서 속도 명령 추종: `vₓ -0.2–0.5 m/s`, `vᵧ ±0.2 m/s`, `ω_z ±0.2 rad/s`, 정지 |
 | 물리·정책 주기 | 물리 `400 Hz`, 정책 `50 Hz` |
 | 정책 입출력 | 관측 `47-D × 5` 프레임 = `235-D`, 행동 `12-D` |
@@ -192,7 +192,7 @@ flowchart LR
 
 | 구분 | 상태 |
 | --- | --- |
-| `RoboNex-Walking-V2-{Edu,Pro,Max}-v0` task 등록 | 구현 완료 |
+| `RoboNex-Walking-V2-Edu-v0` task 등록 | 구현 완료 |
 | 폐루프 RoboNex USD 및 공통 관절 계약 연결 | 구현 완료 |
 | 235차원 관측(47 × 5프레임)·12차원 행동, 속도 명령 관측 | 구현 완료 |
 | 보행 보상함수, 도메인 랜덤화, 종료 조건 | 구현 완료 |
