@@ -230,6 +230,10 @@ robonex-walking/
             └── robonex_walking_v2_env_cfg.py
 ```
 
+## 라이선스
+
+[PolyForm Noncommercial License 1.0.0](LICENSE) · Copyright 2026 RoboNex. 개인·학교·비영리 연구 사용은 자유롭게 허용하며, 상업적 이용은 별도 허가가 필요합니다. Isaac Lab 템플릿에서 시작한 파일은 BSD 3-Clause 헤더를 유지합니다 ([NOTICE](NOTICE) 참고).
+
 ---
 
 Developed by [Humanoid-Project](https://github.com/Humanoid-Project).

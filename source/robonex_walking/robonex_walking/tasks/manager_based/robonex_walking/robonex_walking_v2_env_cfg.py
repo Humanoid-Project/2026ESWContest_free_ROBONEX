@@ -1,7 +1,9 @@
 # Copyright (c) 2022-2026, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
-# SPDX-License-Identifier: BSD-3-Clause
+# Modifications Copyright 2026 RoboNex.
+#
+# SPDX-License-Identifier: BSD-3-Clause AND PolyForm-Noncommercial-1.0.0
 
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
